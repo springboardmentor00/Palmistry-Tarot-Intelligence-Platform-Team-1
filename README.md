@@ -1,0 +1,1 @@
+# Palmistry-Tarot-Intelligence-Platform-Team-1
