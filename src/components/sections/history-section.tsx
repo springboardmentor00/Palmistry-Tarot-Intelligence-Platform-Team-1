@@ -16,9 +16,8 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthedFetch } from '@/components/auth/auth-provider';
 import { cn } from '@/lib/utils';
-
-const DEMO_USER_ID = 'demo-user';
 
 interface PalmReadingRecord {
   id: string;
@@ -61,11 +60,12 @@ export function HistorySection() {
   const [data, setData] = useState<HistoryData | null>(null);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+  const authedFetch = useAuthedFetch();
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/history?userId=${DEMO_USER_ID}`);
+      const res = await authedFetch('/api/history');
       if (!res.ok) throw new Error('Failed to fetch history');
       const json = await res.json();
       setData(json);
@@ -78,7 +78,7 @@ export function HistorySection() {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, authedFetch]);
 
   useEffect(() => {
     load();
@@ -86,7 +86,7 @@ export function HistorySection() {
 
   const remove = async (type: 'palm' | 'tarot' | 'insight', id: string) => {
     try {
-      const res = await fetch(`/api/history?type=${type}&id=${id}`, {
+      const res = await authedFetch(`/api/history?type=${type}&id=${id}`, {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Failed to delete');

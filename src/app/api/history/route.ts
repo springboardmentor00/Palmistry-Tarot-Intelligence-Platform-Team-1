@@ -1,45 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getUserFromRequest } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
   try {
-    const url = new URL(req.url);
-    const userId = url.searchParams.get('userId') ?? 'demo-user';
-
-    // Get or create demo user
-    let user = await db.user.findUnique({ where: { id: userId } });
-    if (!user) {
-      user = await db.user.create({
-        data: {
-          id: userId,
-          name: 'Seeker',
-          role: 'user',
-        },
-      });
+    const authUser = await getUserFromRequest(req);
+    if (!authUser) {
+      return NextResponse.json(
+        { error: 'Authentication required.' },
+        { status: 401 }
+      );
     }
 
     const [palmReadings, tarotReadings, insights] = await Promise.all([
       db.palmReading.findMany({
-        where: { userId },
+        where: { userId: authUser.id },
         orderBy: { createdAt: 'desc' },
         take: 20,
       }),
       db.tarotReading.findMany({
-        where: { userId },
+        where: { userId: authUser.id },
         orderBy: { createdAt: 'desc' },
         take: 20,
       }),
       db.insight.findMany({
-        where: { userId },
+        where: { userId: authUser.id },
         orderBy: { createdAt: 'desc' },
         take: 20,
       }),
     ]);
 
     return NextResponse.json({
-      user,
+      user: authUser,
       palmReadings,
       tarotReadings,
       insights,
@@ -52,6 +46,14 @@ export async function GET(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const authUser = await getUserFromRequest(req);
+    if (!authUser) {
+      return NextResponse.json(
+        { error: 'Authentication required.' },
+        { status: 401 }
+      );
+    }
+
     const url = new URL(req.url);
     const type = url.searchParams.get('type');
     const id = url.searchParams.get('id');
@@ -61,10 +63,23 @@ export async function DELETE(req: NextRequest) {
     }
 
     if (type === 'palm') {
+      // Ensure the reading belongs to the user
+      const existing = await db.palmReading.findUnique({ where: { id } });
+      if (!existing || existing.userId !== authUser.id) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 });
+      }
       await db.palmReading.delete({ where: { id } });
     } else if (type === 'tarot') {
+      const existing = await db.tarotReading.findUnique({ where: { id } });
+      if (!existing || existing.userId !== authUser.id) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 });
+      }
       await db.tarotReading.delete({ where: { id } });
     } else if (type === 'insight') {
+      const existing = await db.insight.findUnique({ where: { id } });
+      if (!existing || existing.userId !== authUser.id) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 });
+      }
       await db.insight.delete({ where: { id } });
     } else {
       return NextResponse.json({ error: 'Invalid type' }, { status: 400 });

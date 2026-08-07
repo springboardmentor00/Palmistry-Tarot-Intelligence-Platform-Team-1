@@ -1,15 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ZAI from 'z-ai-web-dev-sdk';
 import { db } from '@/lib/db';
+import { getUserFromRequest } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
+    // Require authentication
+    const authUser = await getUserFromRequest(req);
+    if (!authUser) {
+      return NextResponse.json(
+        { error: 'Authentication required. Please log in.' },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
-    const { readings, userId } = body as {
+    const { readings } = body as {
       readings: { type: 'palm' | 'tarot'; summary: string; content: string }[];
-      userId?: string;
     };
 
     if (!readings || readings.length === 0) {
@@ -86,32 +95,24 @@ Be warm, specific, and grounded. Tie insights directly back to what the readings
       };
     }
 
-    // Persist insights if userId provided
-    if (userId) {
-      try {
-        // Ensure user exists
-        await db.user.upsert({
-          where: { id: userId },
-          update: {},
-          create: { id: userId, name: 'Seeker', role: 'user' },
+    // Persist insights (user is already authenticated)
+    try {
+      for (const insight of [
+        { ...parsed.personality, type: 'personality' },
+        { ...parsed.trends, type: 'trend' },
+        { ...parsed.recommendations, type: 'recommendation' },
+      ]) {
+        await db.insight.create({
+          data: {
+            userId: authUser.id,
+            type: insight.type,
+            title: insight.title,
+            content: insight.content,
+          },
         });
-        for (const insight of [
-          { ...parsed.personality, type: 'personality' },
-          { ...parsed.trends, type: 'trend' },
-          { ...parsed.recommendations, type: 'recommendation' },
-        ]) {
-          await db.insight.create({
-            data: {
-              userId,
-              type: insight.type,
-              title: insight.title,
-              content: insight.content,
-            },
-          });
-        }
-      } catch (e) {
-        console.error('DB save failed (continuing):', e);
       }
+    } catch (e) {
+      console.error('DB save failed (continuing):', e);
     }
 
     return NextResponse.json(parsed);

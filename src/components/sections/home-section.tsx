@@ -13,11 +13,13 @@ import {
   Eye,
   Zap,
   ShieldCheck,
+  LogIn,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import type { SectionId } from '@/app/page';
+import { useAuth } from '@/components/auth/auth-provider';
 
 interface HomeSectionProps {
   onNavigate: (s: SectionId) => void;
@@ -61,10 +63,10 @@ const STATS = [
   { label: 'Cards in deck', value: '78', icon: Layers },
   { label: 'Spread types', value: '5', icon: Sparkles },
   { label: 'Palm lines read', value: '4', icon: Hand },
-  { label: 'Microservices', value: '12', icon: Zap },
+  { label: 'AI models', value: '2', icon: Zap },
 ];
 
-const ARCHITECTURE_HIGHLIGHTS = [
+const PLATFORM_HIGHLIGHTS = [
   {
     icon: Eye,
     title: 'Vision LLM',
@@ -77,8 +79,8 @@ const ARCHITECTURE_HIGHLIGHTS = [
   },
   {
     icon: ShieldCheck,
-    title: 'Persistent History',
-    text: 'Every reading is stored in Prisma + SQLite so you can revisit insights.',
+    title: 'Secure JWT Auth',
+    text: 'Your account and readings are protected with JWT-based authentication.',
   },
   {
     icon: TrendingUp,
@@ -88,6 +90,8 @@ const ARCHITECTURE_HIGHLIGHTS = [
 ];
 
 export function HomeSection({ onNavigate, savedCount }: HomeSectionProps) {
+  const { user } = useAuth();
+
   return (
     <div className="space-y-16 md:space-y-24">
       {/* Hero */}
@@ -121,14 +125,25 @@ export function HomeSection({ onNavigate, savedCount }: HomeSectionProps) {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
-            <Button
-              size="lg"
-              onClick={() => onNavigate('palm')}
-              className="bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-90 transition-opacity px-8 h-12 text-base"
-            >
-              <Hand className="w-4 h-4 mr-2" />
-              Begin a Palm Reading
-            </Button>
+            {user ? (
+              <Button
+                size="lg"
+                onClick={() => onNavigate('palm')}
+                className="bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-90 transition-opacity px-8 h-12 text-base"
+              >
+                <Hand className="w-4 h-4 mr-2" />
+                Begin a Palm Reading
+              </Button>
+            ) : (
+              <Button
+                size="lg"
+                onClick={() => onNavigate('palm')}
+                className="bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-90 transition-opacity px-8 h-12 text-base"
+              >
+                <LogIn className="w-4 h-4 mr-2" />
+                Sign In to Begin
+              </Button>
+            )}
             <Button
               size="lg"
               variant="outline"
@@ -140,7 +155,7 @@ export function HomeSection({ onNavigate, savedCount }: HomeSectionProps) {
             </Button>
           </div>
 
-          {savedCount > 0 && (
+          {user && savedCount > 0 && (
             <p className="mt-6 text-sm text-muted-foreground">
               <Star className="inline w-3.5 h-3.5 text-primary mr-1.5" />
               You have {savedCount} reading{savedCount > 1 ? 's' : ''} ready for
@@ -189,8 +204,8 @@ export function HomeSection({ onNavigate, savedCount }: HomeSectionProps) {
             Three Pillars of Insight
           </h2>
           <p className="text-muted-foreground max-w-2xl mx-auto">
-            Each pillar is backed by a dedicated AI microservice. Combine them
-            for a complete picture of your inner landscape.
+            Each pillar is backed by a dedicated AI model. Combine them for a
+            complete picture of your inner landscape.
           </p>
         </div>
 
@@ -238,7 +253,7 @@ export function HomeSection({ onNavigate, savedCount }: HomeSectionProps) {
         </div>
       </section>
 
-      {/* Architecture highlights */}
+      {/* Platform highlights */}
       <section>
         <Card className="bg-card/40 backdrop-blur border-border/50 p-6 md:p-10">
           <div className="grid md:grid-cols-2 gap-8 items-start">
@@ -246,32 +261,42 @@ export function HomeSection({ onNavigate, savedCount }: HomeSectionProps) {
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-secondary/60 mb-4">
                 <Zap className="w-3 h-3 text-primary" />
                 <span className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                  System Architecture
+                  Platform Capabilities
                 </span>
               </div>
               <h2 className="font-display text-3xl font-bold mb-4">
-                Built on a 12-Microservice Backbone
+                Mystical Wisdom, Engineered
               </h2>
               <p className="text-muted-foreground leading-relaxed mb-6">
-                Mystica is architected as a modular intelligence platform. Each
-                capability — palm analysis, tarot reading, AI interpretation,
-                trend analysis, recommendations, notifications, analytics,
-                reports, admin — runs as a dedicated service behind an API
-                gateway, with a multi-database data layer powering long-term
-                memory.
+                Mystica pairs ancient divination traditions with modern AI. A
+                vision-language model reads your palm; a text LLM weaves tarot
+                narratives; an insight engine synthesizes both into actionable
+                guidance. All secured behind JWT authentication, with every
+                reading persistently stored to your private history.
               </p>
-              <Button
-                variant="outline"
-                onClick={() => onNavigate('architecture')}
-                className="border-primary/40 hover:bg-secondary/40"
-              >
-                <Eye className="w-4 h-4 mr-2" />
-                Explore the Architecture
-              </Button>
+              {user ? (
+                <Button
+                  variant="outline"
+                  onClick={() => onNavigate('history')}
+                  className="border-primary/40 hover:bg-secondary/40"
+                >
+                  <Eye className="w-4 h-4 mr-2" />
+                  View My Reading History
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  onClick={() => onNavigate('palm')}
+                  className="border-primary/40 hover:bg-secondary/40"
+                >
+                  <LogIn className="w-4 h-4 mr-2" />
+                  Create an Account
+                </Button>
+              )}
             </div>
 
             <div className="grid sm:grid-cols-2 gap-3">
-              {ARCHITECTURE_HIGHLIGHTS.map((h) => {
+              {PLATFORM_HIGHLIGHTS.map((h) => {
                 const Icon = h.icon;
                 return (
                   <div
@@ -300,10 +325,10 @@ export function HomeSection({ onNavigate, savedCount }: HomeSectionProps) {
         <Button
           size="lg"
           variant="ghost"
-          onClick={() => onNavigate('palm')}
+          onClick={() => onNavigate(user ? 'palm' : 'palm')}
           className="text-primary hover:text-primary hover:bg-primary/10"
         >
-          Begin Your Reading
+          {user ? 'Begin Your Reading' : 'Sign In to Begin'}
           <ArrowRight className="w-4 h-4 ml-2" />
         </Button>
       </section>

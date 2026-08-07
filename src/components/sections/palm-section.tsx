@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthedFetch } from '@/components/auth/auth-provider';
 import { cn } from '@/lib/utils';
 
 interface PalmAnalysisResult {
@@ -41,8 +42,6 @@ interface PalmSectionProps {
   }) => void;
 }
 
-const DEMO_USER_ID = 'demo-user';
-
 export function PalmSection({ onReadingComplete }: PalmSectionProps) {
   const [image, setImage] = useState<string | null>(null);
   const [handType, setHandType] = useState<'left' | 'right'>('right');
@@ -53,6 +52,7 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { toast } = useToast();
+  const authedFetch = useAuthedFetch();
 
   const handleFile = useCallback((file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -102,13 +102,12 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/palm-analysis', {
+      const res = await authedFetch('/api/palm-analysis', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           image,
           handType,
-          userId: DEMO_USER_ID,
         }),
       });
       if (!res.ok) {

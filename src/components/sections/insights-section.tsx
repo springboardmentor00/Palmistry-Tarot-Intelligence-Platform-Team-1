@@ -15,8 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-
-const DEMO_USER_ID = 'demo-user';
+import { useAuthedFetch } from '@/components/auth/auth-provider';
 
 interface InsightResult {
   personality: { title: string; content: string };
@@ -34,6 +33,7 @@ export function InsightsSection({ readings }: InsightsSectionProps) {
   const [result, setResult] = useState<InsightResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
+  const authedFetch = useAuthedFetch();
 
   const generate = async () => {
     if (readings.length === 0) {
@@ -48,10 +48,10 @@ export function InsightsSection({ readings }: InsightsSectionProps) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/insights', {
+      const res = await authedFetch('/api/insights', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ readings, userId: DEMO_USER_ID }),
+        body: JSON.stringify({ readings }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Failed' }));

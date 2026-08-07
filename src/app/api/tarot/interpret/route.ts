@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ZAI from 'z-ai-web-dev-sdk';
 import { db } from '@/lib/db';
+import { getUserFromRequest } from '@/lib/auth';
 import { CARD_BY_ID, type CardOrientation } from '@/lib/tarot';
 
 export const runtime = 'nodejs';
@@ -13,19 +14,26 @@ interface DrawnCardPayload {
 
 export async function POST(req: NextRequest) {
   try {
+    // Require authentication
+    const authUser = await getUserFromRequest(req);
+    if (!authUser) {
+      return NextResponse.json(
+        { error: 'Authentication required. Please log in.' },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
     const {
       spreadId,
       spreadName,
       question,
       draw,
-      userId,
     } = body as {
       spreadId: string;
       spreadName: string;
       question?: string;
       draw: DrawnCardPayload[];
-      userId?: string;
     };
 
     if (!draw || !Array.isArray(draw) || draw.length === 0) {
@@ -78,33 +86,25 @@ Write in warm, evocative prose. Avoid bullet lists in the body. Honor both the l
     // Derive a short summary (first 1-2 sentences)
     const summary = interpretation.split(/(?<=[.!?])\s+/).slice(0, 2).join(' ');
 
-    // Persist
+    // Persist (user is already authenticated)
     let savedId: string | undefined;
-    if (userId) {
-      try {
-        // Ensure user exists (upsert handles foreign key constraint)
-        await db.user.upsert({
-          where: { id: userId },
-          update: {},
-          create: { id: userId, name: 'Seeker', role: 'user' },
-        });
-        const record = await db.tarotReading.create({
-          data: {
-            userId,
-            spreadType: spreadId,
-            question: question ?? null,
-            cardIds: JSON.stringify(draw.map((d) => d.cardId)),
-            cardOrientations: JSON.stringify(
-              draw.map((d) => (d.orientation === 'upright' ? true : false))
-            ),
-            interpretation,
-            summary,
-          },
-        });
-        savedId = record.id;
-      } catch (e) {
-        console.error('DB save failed (continuing):', e);
-      }
+    try {
+      const record = await db.tarotReading.create({
+        data: {
+          userId: authUser.id,
+          spreadType: spreadId,
+          question: question ?? null,
+          cardIds: JSON.stringify(draw.map((d) => d.cardId)),
+          cardOrientations: JSON.stringify(
+            draw.map((d) => (d.orientation === 'upright' ? true : false))
+          ),
+          interpretation,
+          summary,
+        },
+      });
+      savedId = record.id;
+    } catch (e) {
+      console.error('DB save failed (continuing):', e);
     }
 
     return NextResponse.json({

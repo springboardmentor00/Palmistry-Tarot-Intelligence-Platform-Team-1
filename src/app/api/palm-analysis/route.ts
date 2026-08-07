@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import ZAI from 'z-ai-web-dev-sdk';
 import { db } from '@/lib/db';
+import { getUserFromRequest } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 
@@ -32,11 +33,19 @@ Be warm, insightful, and respectful. Avoid making medical or absolute prediction
 
 export async function POST(req: NextRequest) {
   try {
+    // Require authentication
+    const authUser = await getUserFromRequest(req);
+    if (!authUser) {
+      return NextResponse.json(
+        { error: 'Authentication required. Please log in.' },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
-    const { image, handType = 'right', userId } = body as {
+    const { image, handType = 'right' } = body as {
       image: string;
       handType?: string;
-      userId?: string;
     };
 
     if (!image) {
@@ -84,33 +93,25 @@ export async function POST(req: NextRequest) {
 
     parsed.rawAnalysis = raw;
 
-    // Persist to database if userId provided
+    // Persist to database (user is already authenticated)
     let savedId: string | undefined;
-    if (userId) {
-      try {
-        // Ensure user exists (upsert handles foreign key constraint)
-        await db.user.upsert({
-          where: { id: userId },
-          update: {},
-          create: { id: userId, name: 'Seeker', role: 'user' },
-        });
-        const record = await db.palmReading.create({
-          data: {
-            userId,
-            imageUrl: image.slice(0, 500), // truncate for storage
-            handType,
-            analysis: raw,
-            summary: parsed.summary,
-            lifeLine: parsed.lifeLine,
-            heartLine: parsed.heartLine,
-            headLine: parsed.headLine,
-            fateLine: parsed.fateLine,
-          },
-        });
-        savedId = record.id;
-      } catch (e) {
-        console.error('DB save failed (continuing):', e);
-      }
+    try {
+      const record = await db.palmReading.create({
+        data: {
+          userId: authUser.id,
+          imageUrl: image.slice(0, 500), // truncate for storage
+          handType,
+          analysis: raw,
+          summary: parsed.summary,
+          lifeLine: parsed.lifeLine,
+          heartLine: parsed.heartLine,
+          headLine: parsed.headLine,
+          fateLine: parsed.fateLine,
+        },
+      });
+      savedId = record.id;
+    } catch (e) {
+      console.error('DB save failed (continuing):', e);
     }
 
     return NextResponse.json({ ...parsed, id: savedId });

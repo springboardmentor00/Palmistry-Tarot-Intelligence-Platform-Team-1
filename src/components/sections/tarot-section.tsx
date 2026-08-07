@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
+import { useAuthedFetch } from '@/components/auth/auth-provider';
 import { cn } from '@/lib/utils';
 import {
   SPREADS,
@@ -24,8 +25,6 @@ import {
   type CardOrientation,
   type TarotCard,
 } from '@/lib/tarot';
-
-const DEMO_USER_ID = 'demo-user';
 
 interface DrawnCard {
   card: TarotCard;
@@ -53,6 +52,7 @@ export function TarotSection({ onReadingComplete }: TarotSectionProps) {
   const [error, setError] = useState<string | null>(null);
 
   const { toast } = useToast();
+  const authedFetch = useAuthedFetch();
 
   const reset = () => {
     setPhase('select');
@@ -117,7 +117,7 @@ export function TarotSection({ onReadingComplete }: TarotSectionProps) {
     setPhase('interpreting');
     setError(null);
     try {
-      const res = await fetch('/api/tarot/interpret', {
+      const res = await authedFetch('/api/tarot/interpret', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -129,7 +129,6 @@ export function TarotSection({ onReadingComplete }: TarotSectionProps) {
             orientation: d.orientation,
             position: d.position,
           })),
-          userId: DEMO_USER_ID,
         }),
       });
       if (!res.ok) {
