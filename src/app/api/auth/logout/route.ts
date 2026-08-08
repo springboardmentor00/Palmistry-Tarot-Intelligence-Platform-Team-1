@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
-import { clearAuthCookie } from '@/lib/auth';
-
-export const runtime = 'nodejs';
 
 export async function POST() {
-  await clearAuthCookie();
+  // Short delay for UI transition
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  
   return NextResponse.json({ ok: true });
 }

@@ -1,93 +1,25 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { db } from '@/lib/db';
-import { getUserFromRequest } from '@/lib/auth';
+import { NextResponse } from 'next/server';
 
-export const runtime = 'nodejs';
+export async function GET() {
+  await new Promise((resolve) => setTimeout(resolve, 500));
 
-export async function GET(req: NextRequest) {
-  try {
-    const authUser = await getUserFromRequest(req);
-    if (!authUser) {
-      return NextResponse.json(
-        { error: 'Authentication required.' },
-        { status: 401 }
-      );
-    }
-
-    const [palmReadings, tarotReadings, insights] = await Promise.all([
-      db.palmReading.findMany({
-        where: { userId: authUser.id },
-        orderBy: { createdAt: 'desc' },
-        take: 20,
-      }),
-      db.tarotReading.findMany({
-        where: { userId: authUser.id },
-        orderBy: { createdAt: 'desc' },
-        take: 20,
-      }),
-      db.insight.findMany({
-        where: { userId: authUser.id },
-        orderBy: { createdAt: 'desc' },
-        take: 20,
-      }),
-    ]);
-
-    return NextResponse.json({
-      user: authUser,
-      palmReadings,
-      tarotReadings,
-      insights,
-    });
-  } catch (err) {
-    console.error('History fetch error:', err);
-    return NextResponse.json({ error: 'Failed to fetch history' }, { status: 500 });
-  }
+  return NextResponse.json({
+    user: { id: "mock-user-123", name: "UI Developer" },
+    palmReadings: [
+      { id: "1", createdAt: new Date().toISOString(), summary: "[MOCK] Yesterday's palm reading." },
+      { id: "2", createdAt: new Date(Date.now() - 86400000).toISOString(), summary: "[MOCK] Last week's palm reading." }
+    ],
+    tarotReadings: [
+      { id: "3", createdAt: new Date().toISOString(), spreadType: "three-card", summary: "[MOCK] Recent 3-card spread." }
+    ],
+    insights: [
+      { id: "4", createdAt: new Date().toISOString(), type: "personality", title: "Mock Trait", content: "You like clean code." }
+    ]
+  });
 }
 
-export async function DELETE(req: NextRequest) {
-  try {
-    const authUser = await getUserFromRequest(req);
-    if (!authUser) {
-      return NextResponse.json(
-        { error: 'Authentication required.' },
-        { status: 401 }
-      );
-    }
-
-    const url = new URL(req.url);
-    const type = url.searchParams.get('type');
-    const id = url.searchParams.get('id');
-
-    if (!type || !id) {
-      return NextResponse.json({ error: 'Missing type or id' }, { status: 400 });
-    }
-
-    if (type === 'palm') {
-      // Ensure the reading belongs to the user
-      const existing = await db.palmReading.findUnique({ where: { id } });
-      if (!existing || existing.userId !== authUser.id) {
-        return NextResponse.json({ error: 'Not found' }, { status: 404 });
-      }
-      await db.palmReading.delete({ where: { id } });
-    } else if (type === 'tarot') {
-      const existing = await db.tarotReading.findUnique({ where: { id } });
-      if (!existing || existing.userId !== authUser.id) {
-        return NextResponse.json({ error: 'Not found' }, { status: 404 });
-      }
-      await db.tarotReading.delete({ where: { id } });
-    } else if (type === 'insight') {
-      const existing = await db.insight.findUnique({ where: { id } });
-      if (!existing || existing.userId !== authUser.id) {
-        return NextResponse.json({ error: 'Not found' }, { status: 404 });
-      }
-      await db.insight.delete({ where: { id } });
-    } else {
-      return NextResponse.json({ error: 'Invalid type' }, { status: 400 });
-    }
-
-    return NextResponse.json({ ok: true });
-  } catch (err) {
-    console.error('Delete error:', err);
-    return NextResponse.json({ error: 'Failed to delete' }, { status: 500 });
-  }
+// Add a mock DELETE route just in case the UI has "delete reading" buttons
+export async function DELETE() {
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  return NextResponse.json({ ok: true });
 }
