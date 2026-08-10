@@ -222,8 +222,14 @@ export function HistorySection() {
               <EmptyState text="No tarot readings saved yet." />
             ) : (
               data.tarotReadings.map((r, i) => {
-                const cards = JSON.parse(r.cardIds) as string[];
-                const orientations = JSON.parse(r.cardOrientations) as boolean[];
+                const cards: string[] =
+                  r.cardIds && r.cardIds !== 'undefined'
+                    ? JSON.parse(r.cardIds)
+                    : [];
+                const orientations: boolean[] =
+                  r.cardOrientations && r.cardOrientations !== 'undefined'
+                    ? JSON.parse(r.cardOrientations)
+                    : [];
                 return (
                   <motion.div
                     key={r.id}

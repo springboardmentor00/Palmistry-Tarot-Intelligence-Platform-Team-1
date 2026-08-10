@@ -20,7 +20,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string) => Promise<void>;
+  register: (name: string, email: string, password: string, role: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -66,17 +66,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (email: string, password: string) => {
+      // FastAPI strictly expects x-www-form-urlencoded and 'username'
+      const formData = new URLSearchParams();
+      formData.append('username', email);
+      formData.append('password', password);
+
       const res = await fetch('/api/auth/login', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: formData,
       });
+      
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Login failed');
+        throw new Error(data.detail || 'Login failed');
       }
-      if (typeof window !== 'undefined' && data.token) {
-        localStorage.setItem(TOKEN_STORAGE_KEY, data.token);
+      
+      if (typeof window !== 'undefined' && data.access_token) {
+        localStorage.setItem(TOKEN_STORAGE_KEY, data.access_token);
       }
       setUser(data.user);
     },
@@ -84,18 +91,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const register = useCallback(
-    async (name: string, email: string, password: string) => {
+    async (name: string, email: string, password: string, role: string) => {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password }),
+        body: JSON.stringify({ name, email, password, role }),
       });
+
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Registration failed');
+        throw new Error(data.detail || 'Registration failed');
       }
-      if (typeof window !== 'undefined' && data.token) {
-        localStorage.setItem(TOKEN_STORAGE_KEY, data.token);
+
+      // Use the consistent storage key
+      if (typeof window !== 'undefined' && data.access_token) {
+        localStorage.setItem(TOKEN_STORAGE_KEY, data.access_token);
       }
       setUser(data.user);
     },
@@ -103,11 +113,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(async () => {
-    try {
-      await fetch('/api/auth/logout', { method: 'POST' });
-    } catch {
-      // ignore
-    }
+    // JWT is stateless, so we just destroy it locally
     if (typeof window !== 'undefined') {
       localStorage.removeItem(TOKEN_STORAGE_KEY);
     }

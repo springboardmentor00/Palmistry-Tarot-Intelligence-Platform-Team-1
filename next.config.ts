@@ -1,12 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
-  /* config options here */
-  typescript: {
-    ignoreBuildErrors: true,
+  async rewrites() {
+    return [
+      {
+        source: "/api/auth/:path*",
+        destination: "http://127.0.0.1:8000/api/auth/:path*",
+      },
+    ];
   },
-  reactStrictMode: false,
 };
 
 export default nextConfig;

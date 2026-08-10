@@ -171,12 +171,14 @@ export default function Home() {
           <div className="flex items-center gap-2">
             {user ? (
               <div className="flex items-center gap-2">
-                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/60 border border-border/50">
-                  <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-xs font-bold text-primary-foreground">
-                    {user.name.charAt(0).toUpperCase()}
+                {user?.name && (
+                  <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/60 border border-border/50">
+                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-xs font-bold text-primary-foreground">
+                      {user.name.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="text-sm font-medium">{user.name}</span>
                   </div>
-                  <span className="text-sm font-medium">{user.name}</span>
-                </div>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"

@@ -14,11 +14,19 @@ import {
   AlertCircle,
   Moon,
   Star,
+  Shield,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useAuth } from '@/components/auth/auth-provider';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -30,6 +38,8 @@ export function AuthScreen() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [role, setRole] = useState('User');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +51,14 @@ export function AuthScreen() {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
+
+    // Frontend Validation for Registration
+    if (mode === 'register' && password !== confirmPassword) {
+      setError('Passwords do not match. Please try again.');
+      setSubmitting(false);
+      return;
+    }
+
     try {
       if (mode === 'login') {
         await login(email, password);
@@ -49,10 +67,12 @@ export function AuthScreen() {
           description: 'You are now signed in.',
         });
       } else {
-        await register(name, email, password);
+        // We pass the role to the register function (you may need to update auth-provider.tsx later to accept this 4th argument)
+        // @ts-ignore - Ignoring TS error temporarily until auth-provider is updated
+        await register(name, email, password, role);
         toast({
           title: 'Account created',
-          description: 'Welcome to Mystica.',
+          description: `Welcome to Mystica as a ${role}.`,
         });
       }
     } catch (err) {
@@ -67,6 +87,7 @@ export function AuthScreen() {
     setMode(next);
     setError(null);
     setPassword('');
+    setConfirmPassword('');
   };
 
   return (
@@ -122,27 +143,51 @@ export function AuthScreen() {
             <AnimatePresence mode="wait">
               {mode === 'register' && (
                 <motion.div
-                  key="name-field"
+                  key="register-fields"
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="space-y-2"
+                  className="space-y-4 overflow-hidden"
                 >
-                  <Label htmlFor="name" className="text-xs uppercase tracking-wider">
-                    Full Name
-                  </Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      id="name"
-                      type="text"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="Jane Mystic"
-                      required
-                      autoComplete="name"
-                      className="pl-10 bg-background/40 border-border/50"
-                    />
+                  {/* Name Field */}
+                  <div className="space-y-2">
+                    <Label htmlFor="name" className="text-xs uppercase tracking-wider">
+                      Full Name
+                    </Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input
+                        id="name"
+                        type="text"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="Jane Mystic"
+                        required
+                        autoComplete="name"
+                        className="pl-10 bg-background/40 border-border/50"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Role Selection Field */}
+                  <div className="space-y-2">
+                    <Label className="text-xs uppercase tracking-wider">
+                      Account Role
+                    </Label>
+                    <Select value={role} onValueChange={setRole}>
+                      <SelectTrigger className="w-full bg-background/40 border-border/50">
+                        <div className="flex items-center gap-2">
+                          <Shield className="w-4 h-4 text-muted-foreground" />
+                          <SelectValue placeholder="Select a role" />
+                        </div>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="User">User</SelectItem>
+                        <SelectItem value="Tarot Reader">Tarot Reader</SelectItem>
+                        <SelectItem value="Spiritual Consultant">Spiritual Consultant</SelectItem>
+                        <SelectItem value="Administrator">Administrator</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </motion.div>
               )}
@@ -204,6 +249,39 @@ export function AuthScreen() {
               </div>
             </div>
 
+            <AnimatePresence mode="wait">
+              {mode === 'register' && (
+                <motion.div
+                  key="confirm-password"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="space-y-2 overflow-hidden pt-1"
+                >
+                  <Label
+                    htmlFor="confirmPassword"
+                    className="text-xs uppercase tracking-wider"
+                  >
+                    Confirm Password
+                  </Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      id="confirmPassword"
+                      type={showPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Confirm your password"
+                      required
+                      minLength={6}
+                      autoComplete="new-password"
+                      className="pl-10 pr-10 bg-background/40 border-border/50"
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             {error && (
               <motion.div
                 initial={{ opacity: 0, y: -5 }}
@@ -218,7 +296,7 @@ export function AuthScreen() {
             <Button
               type="submit"
               disabled={submitting}
-              className="w-full h-12 bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-90 transition-opacity"
+              className="w-full h-12 bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-90 transition-opacity mt-4"
             >
               {submitting ? (
                 <>
