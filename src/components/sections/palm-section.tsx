@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Hand,
@@ -14,6 +14,8 @@ import {
   RotateCcw,
   Check,
   AlertCircle,
+  Camera,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -49,10 +51,92 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
   const [result, setResult] = useState<PalmAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  
+  // Camera & Upload Modes
+  const [inputMode, setInputMode] = useState<'upload' | 'camera'>('upload');
+  const [isCameraActive, setIsCameraActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   const { toast } = useToast();
   const authedFetch = useAuthedFetch();
+
+  // --- Camera Logic ---
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      streamRef.current = stream;
+      // This tells React to stop showing the loader and render the <video> tag
+      setIsCameraActive(true); 
+    } catch (err) {
+      toast({
+        title: 'Camera access denied',
+        description: 'Please allow camera permissions or use the upload tab.',
+        variant: 'destructive',
+      });
+      setInputMode('upload');
+    }
+  };
+
+  // NEW FIX: Wait for the <video> tag to render, THEN attach the stream
+  useEffect(() => {
+    if (isCameraActive && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  }, [isCameraActive]);
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    setIsCameraActive(false);
+  };
+
+  const capturePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const video = videoRef.current;
+      
+      // NEW FIX: Prevent capturing a 0x0 broken image if the video is still loading
+      if (video.videoWidth === 0 || video.videoHeight === 0) {
+         toast({
+           title: 'Camera initializing',
+           description: 'Please wait one second for the video feed to appear before scanning.',
+           variant: 'destructive'
+         });
+         return;
+      }
+
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        // --- NEW: Flip the canvas context horizontally before drawing ---
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+        // ----------------------------------------------------------------
+        
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        setImage(dataUrl);
+        setResult(null);
+        setError(null);
+        stopCamera();
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (inputMode === 'camera' && !image) {
+      startCamera();
+    } else {
+      stopCamera();
+    }
+    return () => stopCamera();
+  }, [inputMode, image]);
 
   const handleFile = useCallback((file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -142,6 +226,7 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
     setImage(null);
     setResult(null);
     setError(null);
+    if (inputMode === 'camera') startCamera();
   };
 
   return (
@@ -157,7 +242,7 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
           AI Palm Reading
         </h1>
         <p className="text-muted-foreground max-w-2xl mx-auto">
-          Upload a clear photo of your palm. A vision-language model examines
+          Upload a clear photo or use your camera to capture your palm. A vision model examines
           the four major lines — heart, head, life, and fate — and synthesizes a
           personality portrait.
         </p>
@@ -182,41 +267,66 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
           </div>
 
           {!image ? (
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragActive(true);
-              }}
-              onDragLeave={() => setDragActive(false)}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className={cn(
-                'border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all',
-                dragActive
-                  ? 'border-primary bg-primary/10'
-                  : 'border-border hover:border-primary/50 hover:bg-secondary/20'
-              )}
-            >
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary/30 to-accent/30 flex items-center justify-center mx-auto mb-4 float">
-                <Upload className="w-7 h-7 text-primary" />
-              </div>
-              <p className="font-medium mb-1">Drop palm image here</p>
-              <p className="text-xs text-muted-foreground mb-4">
-                or click to browse · PNG, JPG, WebP · max 8MB
-              </p>
-              <Button type="button" variant="outline" size="sm">
-                Choose File
-              </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleFile(file);
-                }}
-              />
+            <div className="space-y-4">
+              <Tabs value={inputMode} onValueChange={(v) => setInputMode(v as 'upload' | 'camera')} className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="upload"><ImageIcon className="w-4 h-4 mr-2"/> Upload</TabsTrigger>
+                  <TabsTrigger value="camera"><Camera className="w-4 h-4 mr-2"/> Camera</TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="upload" className="mt-4">
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragActive(true);
+                    }}
+                    onDragLeave={() => setDragActive(false)}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={cn(
+                      'border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all',
+                      dragActive
+                        ? 'border-primary bg-primary/10'
+                        : 'border-border hover:border-primary/50 hover:bg-secondary/20'
+                    )}
+                  >
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary/30 to-accent/30 flex items-center justify-center mx-auto mb-4 float">
+                      <Upload className="w-7 h-7 text-primary" />
+                    </div>
+                    <p className="font-medium mb-1">Drop palm image here</p>
+                    <p className="text-xs text-muted-foreground mb-4">
+                      or click to browse · PNG, JPG, WebP · max 8MB
+                    </p>
+                    <Button type="button" variant="outline" size="sm">
+                      Choose File
+                    </Button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleFile(file);
+                      }}
+                    />
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="camera" className="mt-4">
+                  <div className="relative rounded-xl overflow-hidden border border-border/50 bg-black aspect-video flex items-center justify-center">
+                    {isCameraActive ? (
+                      <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform scale-x-[-1]" />
+                    ) : (
+                      <Loader2 className="w-8 h-8 text-muted-foreground animate-spin" />
+                    )}
+                    <canvas ref={canvasRef} className="hidden" />
+                  </div>
+                  <Button onClick={capturePhoto} disabled={!isCameraActive} className="w-full mt-4 bg-primary text-primary-foreground hover:opacity-90">
+                    <Camera className="w-4 h-4 mr-2" /> Scan Palm
+                  </Button>
+                </TabsContent>
+              </Tabs>
             </div>
           ) : (
             <div className="space-y-4">
@@ -229,7 +339,7 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
                 />
                 <div className="absolute top-2 right-2 px-2 py-1 rounded-full bg-background/80 backdrop-blur text-xs flex items-center gap-1">
                   <Check className="w-3 h-3 text-emerald-400" />
-                  Uploaded
+                  Ready
                 </div>
               </div>
 
@@ -266,7 +376,7 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
                 {loading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Reading the lines...
+                    Analyzing your lines...
                   </>
                 ) : (
                   <>
