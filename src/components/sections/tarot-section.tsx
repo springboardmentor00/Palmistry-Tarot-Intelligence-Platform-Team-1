@@ -85,19 +85,8 @@ export function TarotSection({ onReadingComplete }: TarotSectionProps) {
       }
       const data = await res.json();
       const drawn: DrawnCard[] = data.draw.map((d: any) => {
-        const card: TarotCard = {
-          id: d.cardId,
-          name: d.cardName,
-          arcana: d.arcana,
-          suit: d.suit,
-          number: 0,
-          element: '',
-          keywords: d.keywords,
-          upright: d.upright,
-          reversed: d.reversed,
-          symbol: d.symbol,
-          fortune: '',
-        };
+        // Cleanly grab the full card object (which now includes .img) directly from the backend
+        const card: TarotCard = d.card; 
         return {
           card,
           orientation: d.orientation as CardOrientation,
@@ -449,53 +438,40 @@ function TarotCardView({
       }}
       className="flex flex-col"
     >
+      {/* Position Header (e.g., "PAST") */}
       <div className="text-xs uppercase tracking-wider text-primary text-center mb-1.5 font-medium">
         {position}
       </div>
+      
+      {/* Real Card Image Container */}
       <div
         className={cn(
-          'relative aspect-[2/3.4] rounded-lg overflow-hidden border-2 border-primary/40 bg-gradient-to-br from-secondary/80 via-background/80 to-secondary/60 p-3 flex flex-col items-center justify-between shadow-xl',
-          reversed && 'tarot-reversed'
+          'relative aspect-[2/3.4] rounded-lg overflow-hidden border-2 border-primary/40 shadow-xl bg-muted/20 transition-transform duration-500',
+          reversed && 'rotate-180' // Physically flips the image upside down if reversed
         )}
-        style={{
-          backgroundImage:
-            'radial-gradient(ellipse at top, oklch(0.55 0.18 290 / 0.3), transparent), radial-gradient(ellipse at bottom, oklch(0.6 0.16 320 / 0.2), transparent)',
-        }}
       >
-        <div className="w-full text-center">
-          <div className="text-[10px] uppercase tracking-wider text-primary/80 font-medium">
-            {card.arcana === 'major' ? 'Major Arcana' : card.suit}
-          </div>
-        </div>
-
-        <div className="flex-1 flex flex-col items-center justify-center text-center">
-          <div className="text-4xl md:text-5xl mb-2">{card.symbol}</div>
-          <div className="font-display text-sm md:text-base font-bold leading-tight">
-            {card.name}
-          </div>
-        </div>
-
-        <div className="w-full text-center">
-          <div
-            className={cn(
-              'inline-block text-[10px] px-2 py-0.5 rounded-full',
-              reversed
-                ? 'bg-destructive/20 text-destructive'
-                : 'bg-primary/20 text-primary'
-            )}
-          >
-            {orientation}
-          </div>
-        </div>
-
-        {/* decorative corner stars */}
-        <div className="absolute top-1 left-1 text-primary/40 text-xs">✦</div>
-        <div className="absolute top-1 right-1 text-primary/40 text-xs">✦</div>
-        <div className="absolute bottom-1 left-1 text-primary/40 text-xs">✦</div>
-        <div className="absolute bottom-1 right-1 text-primary/40 text-xs">✦</div>
+        <img 
+          src={`/cards/${card.img}`} 
+          alt={card.name}
+          className="w-full h-full object-cover"
+        />
       </div>
-      <div className="mt-2 text-[11px] text-center text-muted-foreground leading-snug px-1">
-        {card.keywords.slice(0, 3).join(' · ')}
+
+      {/* Orientation Badge & Keywords */}
+      <div className="w-full text-center mt-3">
+        <div
+          className={cn(
+            'inline-block text-[10px] px-2 py-0.5 rounded-full mb-1',
+            reversed
+              ? 'bg-destructive/20 text-destructive'
+              : 'bg-primary/20 text-primary'
+          )}
+        >
+          {orientation}
+        </div>
+      </div>
+      <div className="mt-1 text-[11px] text-center text-muted-foreground leading-snug px-1">
+        {card.keywords?.slice(0, 3).join(' · ')}
       </div>
     </motion.div>
   );

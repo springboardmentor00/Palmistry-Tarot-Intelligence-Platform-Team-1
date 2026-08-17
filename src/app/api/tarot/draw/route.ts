@@ -1,14 +1,25 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { SPREADS, drawCards } from '@/lib/tarot';
 
-export async function POST() {
-  await new Promise((resolve) => setTimeout(resolve, 500));
+export async function POST(req: NextRequest) {
+  try {
+    const { spreadId } = await req.json();
 
-  return NextResponse.json({
-    spread: { name: "Mock Spread", cardCount: 3 },
-    draw: [
-      { cardId: "major-1", cardName: "The Magician", arcana: "major", symbol: "🎩", orientation: "upright", position: "Past", keywords: ["manifestation"] },
-      { cardId: "major-0", cardName: "The Fool", arcana: "major", symbol: "🃏", orientation: "upright", position: "Present", keywords: ["new beginnings"] },
-      { cardId: "major-7", cardName: "The Chariot", arcana: "major", symbol: "🏎️", orientation: "upright", position: "Future", keywords: ["victory"] }
-    ]
-  });
+    if (!spreadId) {
+      return NextResponse.json({ error: 'Spread ID is required' }, { status: 400 });
+    }
+
+    const spread = SPREADS.find((s) => s.id === spreadId);
+    if (!spread) {
+      return NextResponse.json({ error: 'Invalid spread ID' }, { status: 400 });
+    }
+
+    // Call the master function we perfected in lib/tarot.ts
+    // This perfectly shuffles the deck and returns the full card objects (with the .img property!)
+    const drawnCards = drawCards(spread);
+
+    return NextResponse.json({ draw: drawnCards });
+  } catch (error) {
+    return NextResponse.json({ error: 'Failed to draw cards' }, { status: 500 });
+  }
 }

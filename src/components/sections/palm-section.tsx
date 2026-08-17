@@ -99,7 +99,6 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
       
-      // NEW FIX: Prevent capturing a 0x0 broken image if the video is still loading
       if (video.videoWidth === 0 || video.videoHeight === 0) {
          toast({
            title: 'Camera initializing',
@@ -110,17 +109,22 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
       }
 
       const canvas = canvasRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      
+      // --- NEW SPEED FIX: Scale the image down so it sends instantly ---
+      const MAX_WIDTH = 800;
+      const scale = Math.min(MAX_WIDTH / video.videoWidth, 1);
+      canvas.width = video.videoWidth * scale;
+      canvas.height = video.videoHeight * scale;
+      // ----------------------------------------------------------------
+
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        // --- NEW: Flip the canvas context horizontally before drawing ---
         ctx.translate(canvas.width, 0);
         ctx.scale(-1, 1);
-        // ----------------------------------------------------------------
-        
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        
+        // Compress the JPEG to 70% quality for lightning-fast uploads
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7); 
         setImage(dataUrl);
         setResult(null);
         setError(null);
