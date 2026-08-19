@@ -436,24 +436,25 @@ function TarotCardView({
         delay: index * 0.15,
         ease: 'easeOut',
       }}
-      className="flex flex-col"
+      // Force it to center in its grid column and stop stretching
+      className="flex flex-col items-center justify-start w-full mx-auto"
     >
-      {/* Position Header (e.g., "PAST") */}
-      <div className="text-xs uppercase tracking-wider text-primary text-center mb-1.5 font-medium">
+      {/* Position Header */}
+      <div className="text-[10px] sm:text-xs uppercase tracking-wider text-primary text-center mb-2 font-bold truncate w-full">
         {position}
       </div>
       
-      {/* Real Card Image Container */}
+      {/* BULLETPROOF IMAGE CONTAINER: Fixed exact width & height */}
       <div
         className={cn(
-          'relative aspect-[2/3.4] rounded-lg overflow-hidden border-2 border-primary/40 shadow-xl bg-muted/20 transition-transform duration-500',
-          reversed && 'rotate-180' // Physically flips the image upside down if reversed
+          'relative w-32 h-52 sm:w-40 sm:h-64 rounded-lg overflow-hidden border-2 border-primary/40 shadow-xl bg-muted/20 transition-transform duration-500',
+          reversed && 'rotate-180' 
         )}
       >
         <img 
           src={`/cards/${card.img}`} 
           alt={card.name}
-          className="w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-cover"
         />
       </div>
 
@@ -461,7 +462,7 @@ function TarotCardView({
       <div className="w-full text-center mt-3">
         <div
           className={cn(
-            'inline-block text-[10px] px-2 py-0.5 rounded-full mb-1',
+            'inline-block text-[10px] px-2 py-0.5 rounded-full mb-1 font-semibold tracking-wide',
             reversed
               ? 'bg-destructive/20 text-destructive'
               : 'bg-primary/20 text-primary'

@@ -51,7 +51,7 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
   const [result, setResult] = useState<PalmAnalysisResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
-  
+
   // Camera & Upload Modes
   const [inputMode, setInputMode] = useState<'upload' | 'camera'>('upload');
   const [isCameraActive, setIsCameraActive] = useState(false);
@@ -69,7 +69,7 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       streamRef.current = stream;
       // This tells React to stop showing the loader and render the <video> tag
-      setIsCameraActive(true); 
+      setIsCameraActive(true);
     } catch (err) {
       toast({
         title: 'Camera access denied',
@@ -98,18 +98,18 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
   const capturePhoto = () => {
     if (videoRef.current && canvasRef.current) {
       const video = videoRef.current;
-      
+
       if (video.videoWidth === 0 || video.videoHeight === 0) {
-         toast({
-           title: 'Camera initializing',
-           description: 'Please wait one second for the video feed to appear before scanning.',
-           variant: 'destructive'
-         });
-         return;
+        toast({
+          title: 'Camera initializing',
+          description: 'Please wait one second for the video feed to appear before scanning.',
+          variant: 'destructive'
+        });
+        return;
       }
 
       const canvas = canvasRef.current;
-      
+
       // --- NEW SPEED FIX: Scale the image down so it sends instantly ---
       const MAX_WIDTH = 800;
       const scale = Math.min(MAX_WIDTH / video.videoWidth, 1);
@@ -122,9 +122,9 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
         ctx.translate(canvas.width, 0);
         ctx.scale(-1, 1);
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        
+
         // Compress the JPEG to 70% quality for lightning-fast uploads
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.7); 
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
         setImage(dataUrl);
         setResult(null);
         setError(null);
@@ -274,10 +274,10 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
             <div className="space-y-4">
               <Tabs value={inputMode} onValueChange={(v) => setInputMode(v as 'upload' | 'camera')} className="w-full">
                 <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="upload"><ImageIcon className="w-4 h-4 mr-2"/> Upload</TabsTrigger>
-                  <TabsTrigger value="camera"><Camera className="w-4 h-4 mr-2"/> Camera</TabsTrigger>
+                  <TabsTrigger value="upload"><ImageIcon className="w-4 h-4 mr-2" /> Upload</TabsTrigger>
+                  <TabsTrigger value="camera"><Camera className="w-4 h-4 mr-2" /> Camera</TabsTrigger>
                 </TabsList>
-                
+
                 <TabsContent value="upload" className="mt-4">
                   <div
                     onDragOver={(e) => {
@@ -318,14 +318,35 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
                 </TabsContent>
 
                 <TabsContent value="camera" className="mt-4">
-                  <div className="relative rounded-xl overflow-hidden border border-border/50 bg-black aspect-video flex items-center justify-center">
+                  {/* Added a bit more height here so the palm fits nicely */}
+                  <div className="relative rounded-xl overflow-hidden border border-border/50 bg-black aspect-[3/4] sm:aspect-video flex items-center justify-center">
                     {isCameraActive ? (
                       <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform scale-x-[-1]" />
                     ) : (
                       <Loader2 className="w-8 h-8 text-muted-foreground animate-spin" />
                     )}
                     <canvas ref={canvasRef} className="hidden" />
+
+                    {/* NEW: The Clean Alignment Overlay */}
+                    {isCameraActive && (
+                      <div className="absolute inset-0 z-10 pointer-events-none flex flex-col items-center justify-center p-4">
+                        <div className="w-[70%] max-w-[280px] h-[80%] max-h-[350px] border-2 border-dashed border-primary/50 rounded-[2rem] relative animate-pulse flex flex-col items-center justify-center">
+
+                          {/* Corner Brackets */}
+                          <div className="absolute -top-1 -left-1 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-[2rem]"></div>
+                          <div className="absolute -top-1 -right-1 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-[2rem]"></div>
+                          <div className="absolute -bottom-1 -left-1 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-[2rem]"></div>
+                          <div className="absolute -bottom-1 -right-1 w-8 h-8 border-b-4 border-r-4 border-primary rounded-br-[2rem]"></div>
+
+                          {/* Text at the bottom of the box */}
+                          <span className="text-primary font-bold tracking-widest uppercase text-[10px] bg-black/60 px-3 py-1.5 rounded-full backdrop-blur-md mt-auto mb-8">
+                            Center Palm Here
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
+
                   <Button onClick={capturePhoto} disabled={!isCameraActive} className="w-full mt-4 bg-primary text-primary-foreground hover:opacity-90">
                     <Camera className="w-4 h-4 mr-2" /> Scan Palm
                   </Button>
