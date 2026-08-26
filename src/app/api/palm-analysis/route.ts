@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
     const apiResponse = await fetch(`${PALMISTRY_API_URL}/predict`, {
       method: 'POST',
       body: formData,
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(120_000),
     });
 
     if (!apiResponse.ok) {

@@ -5,10 +5,25 @@ import uuid
 import numpy as np
 import tensorflow as tf
 
+tf.config.threading.set_intra_op_parallelism_threads(1)
+tf.config.threading.set_inter_op_parallelism_threads(1)
+
 from PIL import Image
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
+import cv2
+import mediapipe as mp
+# Explicitly import from the python submodule to bypass the Python 3.12 attribute bug
+from mediapipe.python.solutions import hands as mp_hands
+
+# ============================================================
+# MEDIAPIPE INITIALIZATION
+# ============================================================
+hands_detector = mp_hands.Hands(
+    static_image_mode=True, max_num_hands=1, min_detection_confidence=0.5
+)
 
 # ============================================================
 # CONFIGURATION
@@ -48,7 +63,7 @@ os.makedirs(RESULTS_DIR, exist_ok=True)
 
 app = FastAPI(
     title="Palmistry AI API",
-    description="Palm line segmentation using U-Net",
+    description="Palm line segmentation using U-Net with MediaPipe Cropping",
     version="1.0.0",
 )
 
@@ -111,6 +126,60 @@ def health():
 # ============================================================
 
 
+# --- NEW: MEDIAPIPE ROI EXTRACTION ---
+def extract_palm_roi(pil_image: Image.Image, padding_delta: float = 0.15):
+    """
+    Extracts the Palm Region of Interest (ROI) using MediaPipe Hand Landmarks.
+    Formulas implemented:
+      - Center: Cp = 1/5 * (L0 + L5 + L9 + L13 + L17)
+      - Bounding box: x_min = min(x_i) - delta, x_max = max(x_i) + delta
+    """
+    img_np = np.array(pil_image)
+    h, w, _ = img_np.shape
+
+    # Process RGB image with MediaPipe
+    results = hands_detector.process(img_np)
+
+    if not results.multi_hand_landmarks:
+        # If no hand detected, fallback to original image
+        return pil_image, False, None
+
+    landmarks = results.multi_hand_landmarks[0].landmark
+
+    # 1. Palm Center Cp calculation (Wrist L0, Knuckles L5, L9, L13, L17)
+    palm_indices = [0, 5, 9, 13, 17]
+    cp_x = sum(landmarks[i].x for i in palm_indices) / 5.0
+    cp_y = sum(landmarks[i].y for i in palm_indices) / 5.0
+
+    # 2. Extract bounding box across key palm landmarks
+    xs = [landmarks[i].x * w for i in palm_indices]
+    ys = [landmarks[i].y * h for i in palm_indices]
+
+    delta_x = padding_delta * w
+    delta_y = padding_delta * h
+
+    x_min = max(0, int(min(xs) - delta_x))
+    x_max = min(w, int(max(xs) + delta_x))
+    y_min = max(0, int(min(ys) - delta_y))
+    y_max = min(h, int(max(ys) + delta_y))
+
+    # Crop the palm ROI
+    cropped_roi = img_np[y_min:y_max, x_min:x_max]
+
+    # Check if crop is valid (prevents crash if bounding box is somehow outside image)
+    if cropped_roi.size == 0:
+        return pil_image, False, None
+
+    cropped_pil = Image.fromarray(cropped_roi)
+
+    landmark_metadata = {
+        "palm_center": {"x": round(cp_x, 3), "y": round(cp_y, 3)},
+        "roi_box": {"x_min": x_min, "x_max": x_max, "y_min": y_min, "y_max": y_max},
+    }
+
+    return cropped_pil, True, landmark_metadata
+
+
 def create_colored_mask(predicted_mask):
     colors = np.array(
         [
@@ -163,9 +232,12 @@ async def predict_palm(file: UploadFile = File(...)):
     os.makedirs(prediction_dir, exist_ok=True)
 
     # --------------------------------------------------------
-    # Preprocess & Predict
+    # MediaPipe ROI Extraction & Preprocessing
     # --------------------------------------------------------
-    resized = image.resize((IMG_SIZE, IMG_SIZE))
+    palm_roi, hand_detected, roi_meta = extract_palm_roi(image, padding_delta=0.15)
+
+    # Resize cropped ROI (or original image if fallback) to model input size (256x256)
+    resized = palm_roi.resize((IMG_SIZE, IMG_SIZE))
     image_array = np.array(resized, dtype=np.float32) / 255.0
     image_array = np.expand_dims(image_array, axis=0)
 
@@ -173,7 +245,7 @@ async def predict_palm(file: UploadFile = File(...)):
     predicted_mask = np.argmax(prediction[0], axis=-1)
 
     # --------------------------------------------------------
-    # Save Outputs (Teammate's original logic)
+    # Save Outputs
     # --------------------------------------------------------
     raw_mask_path = os.path.join(prediction_dir, "mask.png")
     Image.fromarray(predicted_mask.astype(np.uint8)).save(raw_mask_path)
@@ -182,7 +254,8 @@ async def predict_palm(file: UploadFile = File(...)):
     colored_mask_path = os.path.join(prediction_dir, "colored_mask.png")
     Image.fromarray(colored_mask).save(colored_mask_path)
 
-    original_resized = image.resize((IMG_SIZE, IMG_SIZE))
+    # IMPORTANT: Overlay using the cropped palm_roi, not the original image!
+    original_resized = palm_roi.resize((IMG_SIZE, IMG_SIZE))
     original_array = np.array(original_resized)
     overlay = 0.6 * original_array + 0.4 * colored_mask
     overlay = np.clip(overlay, 0, 255).astype(np.uint8)
@@ -249,6 +322,8 @@ async def predict_palm(file: UploadFile = File(...)):
 
     return {
         "success": True,
+        "hand_detected": hand_detected,  # NEW
+        "roi_metadata": roi_meta,  # NEW
         "prediction_id": prediction_id,
         "filename": file.filename,
         "original_size": {"width": original_size[0], "height": original_size[1]},
