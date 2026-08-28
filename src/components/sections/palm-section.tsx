@@ -16,6 +16,7 @@ import {
   AlertCircle,
   Camera as CameraIcon,
   Image as ImageIcon,
+  Sun
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -30,6 +31,7 @@ interface PalmAnalysisResult {
   heartLine: string;
   headLine: string;
   fateLine: string;
+  sunLine?: string;
   personality: string;
   recommendations: string[];
   rawAnalysis?: string;
@@ -52,25 +54,21 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
 
-  // Camera & Auto-Capture States
   const [inputMode, setInputMode] = useState<'upload' | 'camera'>('upload');
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [cameraStatus, setCameraStatus] = useState<string>('Align your palm within the frame');
   
-  // UI state for capturing
   const [isCapturing, setIsCapturing] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
-  // Native references for bypassing buggy packages
   const streamRef = useRef<MediaStream | null>(null);
   const trackingRef = useRef<number | null>(null);
   const handsRef = useRef<any | null>(null);
   const stableFrames = useRef(0);
   
-  // Refs for logic to avoid useEffect dependency triggers
   const isBootingRef = useRef(false);
   const isCapturingRef = useRef(false);
 
@@ -86,10 +84,9 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
       streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
-    if (handsRef.current) {
-      handsRef.current.close();
-      handsRef.current = null;
-    }
+    
+    // Deliberately keeping handsRef.current alive to prevent WASM file-lock crashes
+    
     setIsCameraActive(false);
     setIsCapturing(false);
     isCapturingRef.current = false;
@@ -98,23 +95,15 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
   }, []);
 
   const startCamera = useCallback(async () => {
-    console.log('[CAMERA] startCamera called');
-
-    if (isBootingRef.current || handsRef.current) {
-      console.log('[CAMERA] Skipping duplicate boot from React Strict Mode');
-      return;
-    }
-    
+    if (isBootingRef.current) return;
     isBootingRef.current = true;
 
     try {
-      // 1. Wait for Radix UI Tabs to actually mount the video/canvas elements
       const waitForCameraElements = async () => {
-        for (let i = 0; i < 20; i++) {
-          if (videoRef.current && canvasRef.current) {
-            return;
-          }
-          await new Promise((resolve) => requestAnimationFrame(resolve));
+        // Wait up to 5 seconds (50 loops of 100ms) for the UI Tab to open
+        for (let i = 0; i < 50; i++) {
+          if (videoRef.current && canvasRef.current) return;
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
         throw new Error('Camera elements failed to mount in the DOM.');
       };
@@ -123,74 +112,64 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
       
       const video = videoRef.current!;
       const canvas = canvasRef.current!;
-      console.log('[CAMERA] DOM refs are ready');
 
-      setCameraStatus('Loading AI vision models...');
-      console.log('[1/4] Loading scripts from CDN...');
-
-      const loadScript = (src: string) => {
-        return new Promise<void>((resolve, reject) => {
-          if (document.querySelector(`script[src="${src}"]`)) return resolve();
-          const script = document.createElement('script');
-          script.src = src;
-          script.crossOrigin = 'anonymous';
-          script.onload = () => resolve();
-          script.onerror = () => reject(new Error(`Failed to load ${src}`));
-          document.body.appendChild(script);
+      if (!streamRef.current) {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        streamRef.current = stream;
+        video.srcObject = stream;
+        
+        await new Promise((resolve) => {
+          if (video.readyState >= 1) resolve(null);
+          else video.onloadedmetadata = () => resolve(null);
         });
-      };
-
-      await Promise.all([
-        loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js'),
-        loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js'),
-      ]);
-
+        await video.play().catch(e => console.warn("Autoplay blocked:", e));
+      }
+      
       const w = window as any;
-      if (!w.Hands) throw new Error("Google MediaPipe CDN failed to load properly.");
       
-      const Hands = w.Hands;
-      const drawConnectors = w.drawConnectors;
-      const drawLandmarks = w.drawLandmarks;
-      
-      const HAND_CONNECTIONS = w.HAND_CONNECTIONS || [
-        [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],
-        [10,11],[11,12],[9,13],[13,14],[14,15],[13,17],[0,17],[17,18],[18,19],[19,20]
-      ];
+      if (!w.__MEDIAPIPE_HANDS__) {
+        setCameraStatus('Loading AI vision models...');
 
-      console.log('[2/4] Starting camera stream...');
-      // Safe generic constraints for maximum desktop/mobile compatibility
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      streamRef.current = stream;
-      video.srcObject = stream;
-      
-      await new Promise((resolve) => {
-        if (video.readyState >= 1) {
-          resolve(null);
-        } else {
-          video.onloadedmetadata = () => resolve(null);
-        }
-      });
-      await video.play().catch(e => console.warn("Autoplay blocked:", e));
+        const loadScript = (src: string) => {
+          return new Promise<void>((resolve, reject) => {
+            if (document.querySelector(`script[src="${src}"]`)) return resolve();
+            const script = document.createElement('script');
+            script.src = src;
+            script.crossOrigin = 'anonymous';
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error(`Failed to load ${src}`));
+            document.body.appendChild(script);
+          });
+        };
 
-      console.log('[3/4] Initializing AI Hands model...');
-      const hands = new Hands({
-        locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
-      });
+        await Promise.all([
+          loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js'),
+          loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js'),
+        ]);
 
-      hands.setOptions({
-        maxNumHands: 1,
-        modelComplexity: 1,
-        minDetectionConfidence: 0.7,
-        minTrackingConfidence: 0.7,
-      });
+        if (!w.Hands) throw new Error("Google MediaPipe CDN failed to load properly.");
 
+        w.__MEDIAPIPE_HANDS__ = new w.Hands({
+          locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+        });
+
+        w.__MEDIAPIPE_HANDS__.setOptions({
+          maxNumHands: 1,
+          modelComplexity: 1,
+          minDetectionConfidence: 0.7,
+          minTrackingConfidence: 0.7,
+        });
+      }
+
+      handsRef.current = w.__MEDIAPIPE_HANDS__;
       let isFrameProcessing = false;
 
-      hands.onResults((results: any) => {
+      handsRef.current.onResults((results: any) => {
         isFrameProcessing = false; 
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
+        // Draw mirror preview for the user
         ctx.save();
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.translate(canvas.width, 0);
@@ -200,31 +179,63 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
         if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
           const landmarks = results.multiHandLandmarks[0];
 
-          drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: '#6366f1', lineWidth: 2 });
-          drawLandmarks(ctx, landmarks, { color: '#a855f7', lineWidth: 1, radius: 3 });
+          w.drawConnectors(ctx, landmarks, w.HAND_CONNECTIONS, { color: '#6366f1', lineWidth: 2 });
+          w.drawLandmarks(ctx, landmarks, { color: '#a855f7', lineWidth: 1, radius: 3 });
 
-          // Using the Ref here prevents dependency array issues
           if (!isCapturingRef.current) {
-            stableFrames.current += 1;
-            setCameraStatus('Palm locked! Hold still...');
+            
+            // --- STRICT GEOMETRY VALIDATION ---
+            const xs = landmarks.map((l: any) => l.x);
+            const ys = landmarks.map((l: any) => l.y);
+            
+            const minX = Math.min(...xs);
+            const maxX = Math.max(...xs);
+            const minY = Math.min(...ys);
+            const maxY = Math.max(...ys);
 
-            if (stableFrames.current >= 30) {
-              isCapturingRef.current = true; // Lock logic
-              setIsCapturing(true);          // Update UI
-              setCameraStatus('Capturing image...');
+            // 1. Is hand safely inside the central box? (15% padding on all sides)
+            const isCentered = minX > 0.15 && maxX < 0.85 && minY > 0.15 && maxY < 0.85;
 
-              const snapCanvas = document.createElement('canvas');
-              snapCanvas.width = canvas.width;
-              snapCanvas.height = canvas.height;
-              const snapCtx = snapCanvas.getContext('2d');
+            // 2. Is hand OPEN and facing UP? (Fingertips must be physically higher than knuckle joints)
+            const isOpen = 
+              landmarks[8].y < landmarks[6].y &&   // Index finger
+              landmarks[12].y < landmarks[10].y && // Middle finger
+              landmarks[16].y < landmarks[14].y && // Ring finger
+              landmarks[20].y < landmarks[18].y;   // Pinky finger
 
-              if (snapCtx) {
-                snapCtx.drawImage(results.image, 0, 0, snapCanvas.width, snapCanvas.height);
-                const dataUrl = snapCanvas.toDataURL('image/jpeg', 0.85);
-                setImage(dataUrl);
-                setResult(null);
-                setError(null);
-                stopCamera();
+            if (isCentered && isOpen) {
+              stableFrames.current += 1;
+              setCameraStatus('Palm locked! Hold still...');
+
+              if (stableFrames.current >= 30) {
+                isCapturingRef.current = true;
+                setIsCapturing(true);          
+                setCameraStatus('Capturing image...');
+
+                const snapCanvas = document.createElement('canvas');
+                snapCanvas.width = canvas.width;
+                snapCanvas.height = canvas.height;
+                const snapCtx = snapCanvas.getContext('2d');
+
+                if (snapCtx) {
+                  // Apply identical mirror math to the final saved image so it matches the UI preview perfectly
+                  snapCtx.translate(snapCanvas.width, 0);
+                  snapCtx.scale(-1, 1);
+                  snapCtx.drawImage(results.image, 0, 0, snapCanvas.width, snapCanvas.height);
+                  
+                  const dataUrl = snapCanvas.toDataURL('image/jpeg', 0.85);
+                  setImage(dataUrl);
+                  setResult(null);
+                  setError(null);
+                  stopCamera();
+                }
+              }
+            } else {
+              stableFrames.current = 0;
+              if (!isCentered) {
+                setCameraStatus('Center your palm inside the box');
+              } else if (!isOpen) {
+                setCameraStatus('Open your hand and fingers wide');
               }
             }
           }
@@ -237,12 +248,12 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
         ctx.restore();
       });
 
-      handsRef.current = hands;
       setIsCameraActive(true);
       isBootingRef.current = false; 
-      console.log('[4/4] Pipeline active! Sending frames...');
 
       const sendFrame = async () => {
+        if (!streamRef.current) return;
+
         if (!isFrameProcessing && videoRef.current && handsRef.current && videoRef.current.readyState >= 2) {
           isFrameProcessing = true;
           await handsRef.current.send({ image: videoRef.current }).catch(() => {
@@ -264,7 +275,7 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
       });
       setInputMode('upload');
     }
-  }, [stopCamera, toast]); // isCapturing is safely removed from dependencies
+  }, [stopCamera, toast]);
 
   useEffect(() => {
     if (inputMode === 'camera' && !image) {
@@ -387,7 +398,6 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
       </header>
 
       <div className="grid lg:grid-cols-2 gap-6">
-        {/* Upload / Camera Panel */}
         <Card className="bg-card/60 backdrop-blur border-border/50 p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display text-xl font-semibold">Your Palm</h2>
@@ -569,7 +579,6 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
           )}
         </Card>
 
-        {/* Result Panel */}
         <Card className="bg-card/60 backdrop-blur border-border/50 p-6 min-h-[400px]">
           <h2 className="font-display text-xl font-semibold mb-4">Reading Result</h2>
 
@@ -610,7 +619,7 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
 
                 <Tabs defaultValue="lines" className="w-full">
                   <TabsList className="grid grid-cols-2 w-full">
-                    <TabsTrigger value="lines">The Four Lines</TabsTrigger>
+                    <TabsTrigger value="lines">The Five Lines</TabsTrigger>
                     <TabsTrigger value="personality">Personality</TabsTrigger>
                   </TabsList>
 
@@ -619,6 +628,7 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
                     <LineReading icon={Brain} label="Head Line" text={result.headLine} color="text-sky-300" />
                     <LineReading icon={Activity} label="Life Line" text={result.lifeLine} color="text-emerald-300" />
                     <LineReading icon={Compass} label="Fate Line" text={result.fateLine} color="text-amber-300" />
+                    <LineReading icon={Sun} label="Sun Line" text={result.sunLine || "The sun line could not be confidently detected."} color="text-yellow-400" />
                   </TabsContent>
 
                   <TabsContent value="personality" className="space-y-4 mt-4">
@@ -651,7 +661,6 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
         </Card>
       </div>
 
-      {/* Guidance Tips */}
       <Card className="bg-card/40 border-border/50 p-6">
         <h3 className="font-display text-lg font-semibold mb-3">Tips for a Clear Reading</h3>
         <div className="grid sm:grid-cols-3 gap-4 text-sm">
