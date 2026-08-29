@@ -120,6 +120,34 @@ Keep it under 150 words. Do not list the confidence percentages, just interpret 
       'Ensure your palm is flat and fully visible inside the scanner box.'
     ];
 
+    // --- NEW CODE: Save Reading to PostgreSQL via FastAPI ---
+    const authHeader = req.headers.get('authorization'); // Grab the JWT token from the frontend
+    
+    if (authHeader) {
+      try {
+        await fetch('http://localhost:8000/api/readings/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': authHeader // Pass the token so FastAPI knows who the user is
+          },
+          body: JSON.stringify({
+            readingType: 'palm',
+            summary: summary,
+            personalitySynthesis: personality,
+            rawData: {
+              handType: hand,
+              lines: lines
+            }
+          })
+        });
+        console.log("Reading successfully saved to database!");
+      } catch (dbError) {
+        console.error('Failed to save reading to DB, but continuing:', dbError);
+      }
+    }
+    // --- END NEW CODE ---
+
     // 4. Return everything to the frontend UI
     return NextResponse.json({
       summary,

@@ -70,6 +70,35 @@ Guidelines:
 
     const summary = `A ${spreadName} reading guided by ${cardNames}.`;
 
+    // --- NEW CODE: Save Tarot Reading to PostgreSQL via FastAPI ---
+    const authHeader = req.headers.get('authorization');
+    
+    if (authHeader) {
+      try {
+        await fetch('http://localhost:8000/api/readings/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': authHeader
+          },
+          body: JSON.stringify({
+            readingType: 'tarot',
+            summary: summary,
+            personalitySynthesis: interpretation, // Gemini's full output
+            rawData: {
+              spreadName: spreadName,
+              question: question || null,
+              draw: draw // Stores exactly which cards were drawn and how they were oriented
+            }
+          })
+        });
+        console.log("Tarot reading successfully saved to database!");
+      } catch (dbError) {
+        console.error('Failed to save tarot reading to DB, but continuing:', dbError);
+      }
+    }
+    // --- END NEW CODE ---
+
     return NextResponse.json({
       interpretation,
       summary,

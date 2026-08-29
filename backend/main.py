@@ -4,6 +4,8 @@ from fastapi.middleware.cors import CORSMiddleware
 # Import our database instance and routers
 from database import db
 from routers import auth
+from routers import profile
+from routers import readings
 
 app = FastAPI(title="Palmistry & Tarot API Gateway")
 
@@ -30,3 +32,9 @@ async def shutdown():
 
 # Plug in the auth routes
 app.include_router(auth.router)
+
+# Plug in the new profile route
+app.include_router(profile.router)
+
+# Plug in the new readings route
+app.include_router(readings.router)
