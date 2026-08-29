@@ -183,6 +183,8 @@ export function AuthScreen() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="User">User</SelectItem>
+                        <SelectItem value="Palm Reader Specialist">Palm Reader Specialist</SelectItem>
+                        <SelectItem value="Palm Reader">Palm Reader</SelectItem>
                         <SelectItem value="Tarot Reader">Tarot Reader</SelectItem>
                         <SelectItem value="Spiritual Consultant">Spiritual Consultant</SelectItem>
                         <SelectItem value="Administrator">Administrator</SelectItem>

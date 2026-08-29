@@ -39,25 +39,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         typeof window !== 'undefined'
           ? localStorage.getItem(TOKEN_STORAGE_KEY)
           : null;
-
-      if (!token) {
-        setUser(null);
-        return;
-      }
-
-      const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const res = await fetch('/api/auth/me', { headers });
       if (!res.ok) {
         setUser(null);
         return;
       }
-      const contentType = res.headers.get('content-type');
-      if (contentType && contentType.includes('application/json')) {
-        const data = await res.json();
-        setUser(data.user ?? null);
-      } else {
-        setUser(null);
-      }
+      const data = await res.json();
+      setUser(data.user ?? null);
     } catch {
       setUser(null);
     }
@@ -86,17 +76,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData,
       });
-
-      const contentType = res.headers.get('content-type');
-      let data: any = {};
-      if (contentType && contentType.includes('application/json')) {
-        data = await res.json().catch(() => ({}));
-      }
-
+      
+      const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.detail || `Authentication failed (${res.status})`);
+        throw new Error(data.detail || 'Login failed');
       }
-
+      
       if (typeof window !== 'undefined' && data.access_token) {
         localStorage.setItem(TOKEN_STORAGE_KEY, data.access_token);
       }
@@ -113,14 +98,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ name, email, password, role }),
       });
 
-      const contentType = res.headers.get('content-type');
-      let data: any = {};
-      if (contentType && contentType.includes('application/json')) {
-        data = await res.json().catch(() => ({}));
-      }
-
+      const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.detail || `Registration failed (${res.status})`);
+        throw new Error(data.detail || 'Registration failed');
       }
 
       // Use the consistent storage key

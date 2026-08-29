@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { userStore } from '../register/route';
 
 export async function POST(req: NextRequest) {
   try {
@@ -11,31 +12,32 @@ export async function POST(req: NextRequest) {
       username = formData.get('username')?.toString() || '';
       password = formData.get('password')?.toString() || '';
     } else {
-      const body = await req.json().catch(() => ({}));
-      username = body.username || body.email || '';
-      password = body.password || '';
+      const json = await req.json();
+      username = json.username || json.email || '';
+      password = json.password || '';
     }
 
-    if (!username) {
-      return NextResponse.json({ detail: 'Invalid credentials' }, { status: 401 });
-    }
+    const lowerEmail = username.toLowerCase();
+    const existing = userStore[lowerEmail];
 
-    const userId = 'user_' + Math.random().toString(36).substring(2, 9);
-    const token = 'mock_jwt_token_' + Date.now();
+    // If user not in store, create a default session for seamless testing
+    const userRole = existing?.role || (lowerEmail.includes('reader') ? 'Palm Reader Specialist' : 'Palm Reader Specialist');
+    const userName = existing?.name || (lowerEmail.split('@')[0] || 'Palm Reader');
+    const userId = existing?.id || `user-${Date.now()}`;
 
-    const user = {
-      id: userId,
-      name: username.split('@')[0] || 'User',
-      email: username.toLowerCase(),
-      role: 'user',
-    };
+    const token = `mock-jwt-token-${Date.now()}-${lowerEmail}`;
 
     return NextResponse.json({
       access_token: token,
       token_type: 'bearer',
-      user,
+      user: {
+        id: userId,
+        name: userName,
+        email: lowerEmail,
+        role: userRole,
+      },
     });
-  } catch (error) {
-    return NextResponse.json({ detail: 'Login failed' }, { status: 500 });
+  } catch (err: any) {
+    return NextResponse.json({ detail: err.message || 'Login failed' }, { status: 500 });
   }
 }

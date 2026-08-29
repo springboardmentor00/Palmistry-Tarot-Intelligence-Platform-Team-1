@@ -13,19 +13,21 @@ import {
   LogOut,
   LogIn,
   Loader2,
+  FileText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Starfield } from '@/components/starfield';
 import { HomeSection } from '@/components/sections/home-section';
 import { PalmSection } from '@/components/sections/palm-section';
+import { PalmConsultationSection } from '@/components/palm-consultation/PalmConsultationSection';
 import { TarotSection } from '@/components/sections/tarot-section';
 import { InsightsSection } from '@/components/sections/insights-section';
 import { HistorySection } from '@/components/sections/history-section';
 import { AuthScreen } from '@/components/auth/auth-screen';
 import { useAuth } from '@/components/auth/auth-provider';
 
-export type SectionId = 'home' | 'palm' | 'tarot' | 'insights' | 'history';
+export type SectionId = 'home' | 'palm' | 'consultation' | 'tarot' | 'insights' | 'history';
 
 interface NavItem {
   id: SectionId;
@@ -37,6 +39,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { id: 'home', label: 'Home', icon: Sparkles },
   { id: 'palm', label: 'Palm Reading', icon: Hand, requiresAuth: true },
+  { id: 'consultation', label: 'Palm Consultation', icon: FileText, requiresAuth: true },
   { id: 'tarot', label: 'Tarot Reading', icon: Layers, requiresAuth: true },
   { id: 'insights', label: 'AI Insights', icon: Brain, requiresAuth: true },
   { id: 'history', label: 'History', icon: History, requiresAuth: true },
@@ -281,6 +284,8 @@ export default function Home() {
               <HomeSection onNavigate={handleNav} savedCount={savedReadings.length} />
             ) : section === 'palm' ? (
               <PalmSection onReadingComplete={addReading} />
+            ) : section === 'consultation' ? (
+              <PalmConsultationSection onBack={() => navigate('home')} />
             ) : section === 'tarot' ? (
               <TarotSection onReadingComplete={addReading} />
             ) : section === 'insights' ? (

@@ -14,7 +14,7 @@ import {
   RotateCcw,
   Check,
   AlertCircle,
-  Camera,
+  Camera as CameraIcon,
   Image as ImageIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -52,86 +52,219 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
 
-  // Camera & Upload Modes
+  // Camera & Auto-Capture States
   const [inputMode, setInputMode] = useState<'upload' | 'camera'>('upload');
   const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraStatus, setCameraStatus] = useState<string>('Align your palm within the frame');
+  
+  // UI state for capturing
+  const [isCapturing, setIsCapturing] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  
+  // Native references for bypassing buggy packages
   const streamRef = useRef<MediaStream | null>(null);
+  const trackingRef = useRef<number | null>(null);
+  const handsRef = useRef<any | null>(null);
+  const stableFrames = useRef(0);
+  
+  // Refs for logic to avoid useEffect dependency triggers
+  const isBootingRef = useRef(false);
+  const isCapturingRef = useRef(false);
 
   const { toast } = useToast();
   const authedFetch = useAuthedFetch();
 
-  // --- Camera Logic ---
-  const startCamera = async () => {
+  const stopCamera = useCallback(() => {
+    if (trackingRef.current) {
+      cancelAnimationFrame(trackingRef.current);
+      trackingRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (handsRef.current) {
+      handsRef.current.close();
+      handsRef.current = null;
+    }
+    setIsCameraActive(false);
+    setIsCapturing(false);
+    isCapturingRef.current = false;
+    isBootingRef.current = false;
+    stableFrames.current = 0;
+  }, []);
+
+  const startCamera = useCallback(async () => {
+    console.log('[CAMERA] startCamera called');
+
+    if (isBootingRef.current || handsRef.current) {
+      console.log('[CAMERA] Skipping duplicate boot from React Strict Mode');
+      return;
+    }
+    
+    isBootingRef.current = true;
+
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      // 1. Wait for Radix UI Tabs to actually mount the video/canvas elements
+      const waitForCameraElements = async () => {
+        for (let i = 0; i < 20; i++) {
+          if (videoRef.current && canvasRef.current) {
+            return;
+          }
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+        }
+        throw new Error('Camera elements failed to mount in the DOM.');
+      };
+
+      await waitForCameraElements();
+      
+      const video = videoRef.current!;
+      const canvas = canvasRef.current!;
+      console.log('[CAMERA] DOM refs are ready');
+
+      setCameraStatus('Loading AI vision models...');
+      console.log('[1/4] Loading scripts from CDN...');
+
+      const loadScript = (src: string) => {
+        return new Promise<void>((resolve, reject) => {
+          if (document.querySelector(`script[src="${src}"]`)) return resolve();
+          const script = document.createElement('script');
+          script.src = src;
+          script.crossOrigin = 'anonymous';
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error(`Failed to load ${src}`));
+          document.body.appendChild(script);
+        });
+      };
+
+      await Promise.all([
+        loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js'),
+        loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js'),
+      ]);
+
+      const w = window as any;
+      if (!w.Hands) throw new Error("Google MediaPipe CDN failed to load properly.");
+      
+      const Hands = w.Hands;
+      const drawConnectors = w.drawConnectors;
+      const drawLandmarks = w.drawLandmarks;
+      
+      const HAND_CONNECTIONS = w.HAND_CONNECTIONS || [
+        [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],
+        [10,11],[11,12],[9,13],[13,14],[14,15],[13,17],[0,17],[17,18],[18,19],[19,20]
+      ];
+
+      console.log('[2/4] Starting camera stream...');
+      // Safe generic constraints for maximum desktop/mobile compatibility
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       streamRef.current = stream;
-      // This tells React to stop showing the loader and render the <video> tag
+      video.srcObject = stream;
+      
+      await new Promise((resolve) => {
+        if (video.readyState >= 1) {
+          resolve(null);
+        } else {
+          video.onloadedmetadata = () => resolve(null);
+        }
+      });
+      await video.play().catch(e => console.warn("Autoplay blocked:", e));
+
+      console.log('[3/4] Initializing AI Hands model...');
+      const hands = new Hands({
+        locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+      });
+
+      hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.7,
+        minTrackingConfidence: 0.7,
+      });
+
+      let isFrameProcessing = false;
+
+      hands.onResults((results: any) => {
+        isFrameProcessing = false; 
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        ctx.save();
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+          const landmarks = results.multiHandLandmarks[0];
+
+          drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: '#6366f1', lineWidth: 2 });
+          drawLandmarks(ctx, landmarks, { color: '#a855f7', lineWidth: 1, radius: 3 });
+
+          // Using the Ref here prevents dependency array issues
+          if (!isCapturingRef.current) {
+            stableFrames.current += 1;
+            setCameraStatus('Palm locked! Hold still...');
+
+            if (stableFrames.current >= 30) {
+              isCapturingRef.current = true; // Lock logic
+              setIsCapturing(true);          // Update UI
+              setCameraStatus('Capturing image...');
+
+              const snapCanvas = document.createElement('canvas');
+              snapCanvas.width = canvas.width;
+              snapCanvas.height = canvas.height;
+              const snapCtx = snapCanvas.getContext('2d');
+
+              if (snapCtx) {
+                snapCtx.drawImage(results.image, 0, 0, snapCanvas.width, snapCanvas.height);
+                const dataUrl = snapCanvas.toDataURL('image/jpeg', 0.85);
+                setImage(dataUrl);
+                setResult(null);
+                setError(null);
+                stopCamera();
+              }
+            }
+          }
+        } else {
+          stableFrames.current = 0;
+          if (!isCapturingRef.current) {
+            setCameraStatus('Align your palm within the frame');
+          }
+        }
+        ctx.restore();
+      });
+
+      handsRef.current = hands;
       setIsCameraActive(true);
+      isBootingRef.current = false; 
+      console.log('[4/4] Pipeline active! Sending frames...');
+
+      const sendFrame = async () => {
+        if (!isFrameProcessing && videoRef.current && handsRef.current && videoRef.current.readyState >= 2) {
+          isFrameProcessing = true;
+          await handsRef.current.send({ image: videoRef.current }).catch(() => {
+             isFrameProcessing = false;
+          });
+        }
+        trackingRef.current = requestAnimationFrame(sendFrame);
+      };
+      
+      sendFrame();
+
     } catch (err) {
+      console.error("[CAMERA] startup failed:", err);
+      isBootingRef.current = false;
       toast({
-        title: 'Camera access denied',
-        description: 'Please allow camera permissions or use the upload tab.',
+        title: 'Camera access error',
+        description: 'Failed to start AI vision pipeline.',
         variant: 'destructive',
       });
       setInputMode('upload');
     }
-  };
-
-  // NEW FIX: Wait for the <video> tag to render, THEN attach the stream
-  useEffect(() => {
-    if (isCameraActive && videoRef.current && streamRef.current) {
-      videoRef.current.srcObject = streamRef.current;
-    }
-  }, [isCameraActive]);
-
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    setIsCameraActive(false);
-  };
-
-  const capturePhoto = () => {
-    if (videoRef.current && canvasRef.current) {
-      const video = videoRef.current;
-
-      if (video.videoWidth === 0 || video.videoHeight === 0) {
-        toast({
-          title: 'Camera initializing',
-          description: 'Please wait one second for the video feed to appear before scanning.',
-          variant: 'destructive'
-        });
-        return;
-      }
-
-      const canvas = canvasRef.current;
-
-      // --- NEW SPEED FIX: Scale the image down so it sends instantly ---
-      const MAX_WIDTH = 800;
-      const scale = Math.min(MAX_WIDTH / video.videoWidth, 1);
-      canvas.width = video.videoWidth * scale;
-      canvas.height = video.videoHeight * scale;
-      // ----------------------------------------------------------------
-
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.translate(canvas.width, 0);
-        ctx.scale(-1, 1);
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-        // Compress the JPEG to 70% quality for lightning-fast uploads
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
-        setImage(dataUrl);
-        setResult(null);
-        setError(null);
-        stopCamera();
-      }
-    }
-  };
+  }, [stopCamera, toast]); // isCapturing is safely removed from dependencies
 
   useEffect(() => {
     if (inputMode === 'camera' && !image) {
@@ -140,7 +273,7 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
       stopCamera();
     }
     return () => stopCamera();
-  }, [inputMode, image]);
+  }, [inputMode, image, startCamera, stopCamera]);
 
   const handleFile = useCallback((file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -182,7 +315,7 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
     if (!image) {
       toast({
         title: 'No image',
-        description: 'Please upload a palm image first.',
+        description: 'Please upload or capture a palm image first.',
         variant: 'destructive',
       });
       return;
@@ -230,7 +363,9 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
     setImage(null);
     setResult(null);
     setError(null);
-    if (inputMode === 'camera') startCamera();
+    if (inputMode === 'camera') {
+      startCamera();
+    }
   };
 
   return (
@@ -246,14 +381,13 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
           AI Palm Reading
         </h1>
         <p className="text-muted-foreground max-w-2xl mx-auto">
-          Upload a clear photo or use your camera to capture your palm. A vision model examines
-          the four major lines — heart, head, life, and fate — and synthesizes a
-          personality portrait.
+          Upload a clear photo or hold your palm up to the camera. Real-time vision
+          detects your hand, crops the palm region, and synthesizes a complete analysis.
         </p>
       </header>
 
       <div className="grid lg:grid-cols-2 gap-6">
-        {/* Upload + preview */}
+        {/* Upload / Camera Panel */}
         <Card className="bg-card/60 backdrop-blur border-border/50 p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display text-xl font-semibold">Your Palm</h2>
@@ -265,17 +399,25 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
                 className="text-muted-foreground"
               >
                 <RotateCcw className="w-3.5 h-3.5 mr-1" />
-                Reset
+                Retake / Reset
               </Button>
             )}
           </div>
 
           {!image ? (
             <div className="space-y-4">
-              <Tabs value={inputMode} onValueChange={(v) => setInputMode(v as 'upload' | 'camera')} className="w-full">
+              <Tabs
+                value={inputMode}
+                onValueChange={(v) => setInputMode(v as 'upload' | 'camera')}
+                className="w-full"
+              >
                 <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="upload"><ImageIcon className="w-4 h-4 mr-2" /> Upload</TabsTrigger>
-                  <TabsTrigger value="camera"><Camera className="w-4 h-4 mr-2" /> Camera</TabsTrigger>
+                  <TabsTrigger value="upload">
+                    <ImageIcon className="w-4 h-4 mr-2" /> Upload
+                  </TabsTrigger>
+                  <TabsTrigger value="camera">
+                    <CameraIcon className="w-4 h-4 mr-2" /> Live Camera
+                  </TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="upload" className="mt-4">
@@ -317,54 +459,57 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
                   </div>
                 </TabsContent>
 
-                <TabsContent value="camera" className="mt-4">
-                  {/* Added a bit more height here so the palm fits nicely */}
-                  <div className="relative rounded-xl overflow-hidden border border-border/50 bg-black aspect-[3/4] sm:aspect-video flex items-center justify-center">
-                    {isCameraActive ? (
-                      <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform scale-x-[-1]" />
-                    ) : (
-                      <Loader2 className="w-8 h-8 text-muted-foreground animate-spin" />
-                    )}
-                    <canvas ref={canvasRef} className="hidden" />
+                <TabsContent value="camera" className="mt-4 space-y-3">
+                  <div className="relative rounded-xl overflow-hidden border border-border/50 bg-black aspect-[4/3] flex items-center justify-center">
+                    <video ref={videoRef} autoPlay playsInline muted className="absolute opacity-0 pointer-events-none w-full h-full" />
 
-                    {/* NEW: The Clean Alignment Overlay */}
+                    <canvas
+                      ref={canvasRef}
+                      width={640}
+                      height={480}
+                      className={cn('w-full h-full object-cover', !isCameraActive && 'hidden')}
+                    />
+
+                    {!isCameraActive && (
+                      <div className="flex flex-col items-center gap-2">
+                        <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                        <span className="text-xs text-muted-foreground">Starting vision pipeline...</span>
+                      </div>
+                    )}
+
                     {isCameraActive && (
                       <div className="absolute inset-0 z-10 pointer-events-none flex flex-col items-center justify-center p-4">
-                        <div className="w-[70%] max-w-[280px] h-[80%] max-h-[350px] border-2 border-dashed border-primary/50 rounded-[2rem] relative animate-pulse flex flex-col items-center justify-center">
+                        <div className="w-[70%] max-w-[280px] h-[80%] max-h-[340px] border-2 border-dashed border-primary/50 rounded-[2rem] relative flex flex-col items-center justify-center">
+                          <div className="absolute -top-1 -left-1 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-[2rem]" />
+                          <div className="absolute -top-1 -right-1 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-[2rem]" />
+                          <div className="absolute -bottom-1 -left-1 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-[2rem]" />
+                          <div className="absolute -bottom-1 -right-1 w-8 h-8 border-b-4 border-r-4 border-primary rounded-br-[2rem]" />
 
-                          {/* Corner Brackets */}
-                          <div className="absolute -top-1 -left-1 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-[2rem]"></div>
-                          <div className="absolute -top-1 -right-1 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-[2rem]"></div>
-                          <div className="absolute -bottom-1 -left-1 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-[2rem]"></div>
-                          <div className="absolute -bottom-1 -right-1 w-8 h-8 border-b-4 border-r-4 border-primary rounded-br-[2rem]"></div>
-
-                          {/* Text at the bottom of the box */}
-                          <span className="text-primary font-bold tracking-widest uppercase text-[10px] bg-black/60 px-3 py-1.5 rounded-full backdrop-blur-md mt-auto mb-8">
-                            Center Palm Here
+                          <span className="text-primary font-bold tracking-widest uppercase text-[10px] bg-black/70 px-3 py-1.5 rounded-full backdrop-blur-md mt-auto mb-6">
+                            Auto-Detection Active
                           </span>
                         </div>
                       </div>
                     )}
                   </div>
 
-                  <Button onClick={capturePhoto} disabled={!isCameraActive} className="w-full mt-4 bg-primary text-primary-foreground hover:opacity-90">
-                    <Camera className="w-4 h-4 mr-2" /> Scan Palm
-                  </Button>
+                  <div className="text-center p-2 rounded-lg bg-secondary/40 border border-border/40 text-xs font-medium text-muted-foreground">
+                    {cameraStatus}
+                  </div>
                 </TabsContent>
               </Tabs>
             </div>
           ) : (
             <div className="space-y-4">
               <div className="relative rounded-xl overflow-hidden border border-border/50 bg-background/40">
-                {/* Uploaded palm preview */}
                 <img
                   src={image}
-                  alt="Uploaded palm"
+                  alt="Captured palm"
                   className="w-full max-h-80 object-contain"
                 />
                 <div className="absolute top-2 right-2 px-2 py-1 rounded-full bg-background/80 backdrop-blur text-xs flex items-center gap-1">
                   <Check className="w-3 h-3 text-emerald-400" />
-                  Ready
+                  Image Ready
                 </div>
               </div>
 
@@ -401,7 +546,7 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
                 {loading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Analyzing your lines...
+                    Analyzing palm lines...
                   </>
                 ) : (
                   <>
@@ -424,18 +569,14 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
           )}
         </Card>
 
-        {/* Result panel */}
+        {/* Result Panel */}
         <Card className="bg-card/60 backdrop-blur border-border/50 p-6 min-h-[400px]">
-          <h2 className="font-display text-xl font-semibold mb-4">
-            Reading Result
-          </h2>
+          <h2 className="font-display text-xl font-semibold mb-4">Reading Result</h2>
 
           {!result && !loading && (
             <div className="h-[300px] flex flex-col items-center justify-center text-center text-muted-foreground">
               <Hand className="w-12 h-12 mb-3 opacity-30" />
-              <p className="text-sm">
-                Your palm reading will appear here after analysis.
-              </p>
+              <p className="text-sm">Your palm reading will appear here after analysis.</p>
             </div>
           )}
 
@@ -474,51 +615,22 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
                   </TabsList>
 
                   <TabsContent value="lines" className="space-y-3 mt-4">
-                    <LineReading
-                      icon={Heart}
-                      label="Heart Line"
-                      text={result.heartLine}
-                      color="text-rose-300"
-                    />
-                    <LineReading
-                      icon={Brain}
-                      label="Head Line"
-                      text={result.headLine}
-                      color="text-sky-300"
-                    />
-                    <LineReading
-                      icon={Activity}
-                      label="Life Line"
-                      text={result.lifeLine}
-                      color="text-emerald-300"
-                    />
-                    <LineReading
-                      icon={Compass}
-                      label="Fate Line"
-                      text={result.fateLine}
-                      color="text-amber-300"
-                    />
+                    <LineReading icon={Heart} label="Heart Line" text={result.heartLine} color="text-rose-300" />
+                    <LineReading icon={Brain} label="Head Line" text={result.headLine} color="text-sky-300" />
+                    <LineReading icon={Activity} label="Life Line" text={result.lifeLine} color="text-emerald-300" />
+                    <LineReading icon={Compass} label="Fate Line" text={result.fateLine} color="text-amber-300" />
                   </TabsContent>
 
                   <TabsContent value="personality" className="space-y-4 mt-4">
                     <div>
-                      <h3 className="text-sm font-semibold mb-2 text-primary">
-                        Personality Synthesis
-                      </h3>
-                      <p className="text-sm text-muted-foreground leading-relaxed">
-                        {result.personality}
-                      </p>
+                      <h3 className="text-sm font-semibold mb-2 text-primary">Personality Synthesis</h3>
+                      <p className="text-sm text-muted-foreground leading-relaxed">{result.personality}</p>
                     </div>
                     <div>
-                      <h3 className="text-sm font-semibold mb-2 text-primary">
-                        Recommendations
-                      </h3>
+                      <h3 className="text-sm font-semibold mb-2 text-primary">Recommendations</h3>
                       <ul className="space-y-2">
                         {result.recommendations?.map((r, i) => (
-                          <li
-                            key={i}
-                            className="text-sm text-muted-foreground flex items-start gap-2"
-                          >
+                          <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
                             <span className="text-primary mt-0.5">·</span>
                             <span>{r}</span>
                           </li>
@@ -539,11 +651,9 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
         </Card>
       </div>
 
-      {/* Tips */}
+      {/* Guidance Tips */}
       <Card className="bg-card/40 border-border/50 p-6">
-        <h3 className="font-display text-lg font-semibold mb-3">
-          Tips for a Clear Reading
-        </h3>
+        <h3 className="font-display text-lg font-semibold mb-3">Tips for a Clear Reading</h3>
         <div className="grid sm:grid-cols-3 gap-4 text-sm">
           <div>
             <div className="font-medium text-primary mb-1">Good lighting</div>
@@ -554,13 +664,13 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
           <div>
             <div className="font-medium text-primary mb-1">Open the hand</div>
             <p className="text-muted-foreground">
-              Slightly cup the palm so all four major lines are visible.
+              Hold fingers open and steady inside the box until the shutter locks.
             </p>
           </div>
           <div>
             <div className="font-medium text-primary mb-1">Frame the whole palm</div>
             <p className="text-muted-foreground">
-              Include from wrist to base of fingers in the photo.
+              Keep your wrist and the base of your fingers in view.
             </p>
           </div>
         </div>
@@ -569,17 +679,7 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
   );
 }
 
-function LineReading({
-  icon: Icon,
-  label,
-  text,
-  color,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  text: string;
-  color: string;
-}) {
+function LineReading({ icon: Icon, label, text, color }: { icon: React.ComponentType<{ className?: string }>; label: string; text: string; color: string; }) {
   return (
     <div className="p-3 rounded-lg bg-background/40 border border-border/50">
       <div className="flex items-center gap-2 mb-1.5">

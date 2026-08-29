@@ -120,9 +120,9 @@ export function TarotSection({ onReadingComplete }: TarotSectionProps) {
           })),
         }),
       });
-      const contentType = res.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        throw new Error(`Server returned non-JSON response (${res.status})`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Failed' }));
+        throw new Error(err.error || 'Failed to interpret');
       }
       const data = await res.json();
       setInterpretation(data.interpretation);
