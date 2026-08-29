@@ -1,0 +1,13 @@
+# Virtual Environment
+venv/
+env/
+
+# Environment Variables (Never push passwords!)
+.env
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# Prisma Generated Client
+prisma/client/

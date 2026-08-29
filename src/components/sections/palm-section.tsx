@@ -1,0 +1,692 @@
+'use client';
+
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Hand,
+  Upload,
+  Loader2,
+  Sparkles,
+  Heart,
+  Brain,
+  Activity,
+  Compass,
+  RotateCcw,
+  Check,
+  AlertCircle,
+  Camera as CameraIcon,
+  Image as ImageIcon,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useToast } from '@/hooks/use-toast';
+import { useAuthedFetch } from '@/components/auth/auth-provider';
+import { cn } from '@/lib/utils';
+
+interface PalmAnalysisResult {
+  summary: string;
+  lifeLine: string;
+  heartLine: string;
+  headLine: string;
+  fateLine: string;
+  personality: string;
+  recommendations: string[];
+  rawAnalysis?: string;
+  id?: string;
+}
+
+interface PalmSectionProps {
+  onReadingComplete: (r: {
+    type: 'palm';
+    summary: string;
+    content: string;
+  }) => void;
+}
+
+export function PalmSection({ onReadingComplete }: PalmSectionProps) {
+  const [image, setImage] = useState<string | null>(null);
+  const [handType, setHandType] = useState<'left' | 'right'>('right');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<PalmAnalysisResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+
+  // Camera & Auto-Capture States
+  const [inputMode, setInputMode] = useState<'upload' | 'camera'>('upload');
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraStatus, setCameraStatus] = useState<string>('Align your palm within the frame');
+  
+  // UI state for capturing
+  const [isCapturing, setIsCapturing] = useState(false);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  
+  // Native references for bypassing buggy packages
+  const streamRef = useRef<MediaStream | null>(null);
+  const trackingRef = useRef<number | null>(null);
+  const handsRef = useRef<any | null>(null);
+  const stableFrames = useRef(0);
+  
+  // Refs for logic to avoid useEffect dependency triggers
+  const isBootingRef = useRef(false);
+  const isCapturingRef = useRef(false);
+
+  const { toast } = useToast();
+  const authedFetch = useAuthedFetch();
+
+  const stopCamera = useCallback(() => {
+    if (trackingRef.current) {
+      cancelAnimationFrame(trackingRef.current);
+      trackingRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (handsRef.current) {
+      handsRef.current.close();
+      handsRef.current = null;
+    }
+    setIsCameraActive(false);
+    setIsCapturing(false);
+    isCapturingRef.current = false;
+    isBootingRef.current = false;
+    stableFrames.current = 0;
+  }, []);
+
+  const startCamera = useCallback(async () => {
+    console.log('[CAMERA] startCamera called');
+
+    if (isBootingRef.current || handsRef.current) {
+      console.log('[CAMERA] Skipping duplicate boot from React Strict Mode');
+      return;
+    }
+    
+    isBootingRef.current = true;
+
+    try {
+      // 1. Wait for Radix UI Tabs to actually mount the video/canvas elements
+      const waitForCameraElements = async () => {
+        for (let i = 0; i < 20; i++) {
+          if (videoRef.current && canvasRef.current) {
+            return;
+          }
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+        }
+        throw new Error('Camera elements failed to mount in the DOM.');
+      };
+
+      await waitForCameraElements();
+      
+      const video = videoRef.current!;
+      const canvas = canvasRef.current!;
+      console.log('[CAMERA] DOM refs are ready');
+
+      setCameraStatus('Loading AI vision models...');
+      console.log('[1/4] Loading scripts from CDN...');
+
+      const loadScript = (src: string) => {
+        return new Promise<void>((resolve, reject) => {
+          if (document.querySelector(`script[src="${src}"]`)) return resolve();
+          const script = document.createElement('script');
+          script.src = src;
+          script.crossOrigin = 'anonymous';
+          script.onload = () => resolve();
+          script.onerror = () => reject(new Error(`Failed to load ${src}`));
+          document.body.appendChild(script);
+        });
+      };
+
+      await Promise.all([
+        loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js'),
+        loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js'),
+      ]);
+
+      const w = window as any;
+      if (!w.Hands) throw new Error("Google MediaPipe CDN failed to load properly.");
+      
+      const Hands = w.Hands;
+      const drawConnectors = w.drawConnectors;
+      const drawLandmarks = w.drawLandmarks;
+      
+      const HAND_CONNECTIONS = w.HAND_CONNECTIONS || [
+        [0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],
+        [10,11],[11,12],[9,13],[13,14],[14,15],[13,17],[0,17],[17,18],[18,19],[19,20]
+      ];
+
+      console.log('[2/4] Starting camera stream...');
+      // Safe generic constraints for maximum desktop/mobile compatibility
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      streamRef.current = stream;
+      video.srcObject = stream;
+      
+      await new Promise((resolve) => {
+        if (video.readyState >= 1) {
+          resolve(null);
+        } else {
+          video.onloadedmetadata = () => resolve(null);
+        }
+      });
+      await video.play().catch(e => console.warn("Autoplay blocked:", e));
+
+      console.log('[3/4] Initializing AI Hands model...');
+      const hands = new Hands({
+        locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+      });
+
+      hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.7,
+        minTrackingConfidence: 0.7,
+      });
+
+      let isFrameProcessing = false;
+
+      hands.onResults((results: any) => {
+        isFrameProcessing = false; 
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        ctx.save();
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.translate(canvas.width, 0);
+        ctx.scale(-1, 1);
+        ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+          const landmarks = results.multiHandLandmarks[0];
+
+          drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: '#6366f1', lineWidth: 2 });
+          drawLandmarks(ctx, landmarks, { color: '#a855f7', lineWidth: 1, radius: 3 });
+
+          // Using the Ref here prevents dependency array issues
+          if (!isCapturingRef.current) {
+            stableFrames.current += 1;
+            setCameraStatus('Palm locked! Hold still...');
+
+            if (stableFrames.current >= 30) {
+              isCapturingRef.current = true; // Lock logic
+              setIsCapturing(true);          // Update UI
+              setCameraStatus('Capturing image...');
+
+              const snapCanvas = document.createElement('canvas');
+              snapCanvas.width = canvas.width;
+              snapCanvas.height = canvas.height;
+              const snapCtx = snapCanvas.getContext('2d');
+
+              if (snapCtx) {
+                snapCtx.drawImage(results.image, 0, 0, snapCanvas.width, snapCanvas.height);
+                const dataUrl = snapCanvas.toDataURL('image/jpeg', 0.85);
+                setImage(dataUrl);
+                setResult(null);
+                setError(null);
+                stopCamera();
+              }
+            }
+          }
+        } else {
+          stableFrames.current = 0;
+          if (!isCapturingRef.current) {
+            setCameraStatus('Align your palm within the frame');
+          }
+        }
+        ctx.restore();
+      });
+
+      handsRef.current = hands;
+      setIsCameraActive(true);
+      isBootingRef.current = false; 
+      console.log('[4/4] Pipeline active! Sending frames...');
+
+      const sendFrame = async () => {
+        if (!isFrameProcessing && videoRef.current && handsRef.current && videoRef.current.readyState >= 2) {
+          isFrameProcessing = true;
+          await handsRef.current.send({ image: videoRef.current }).catch(() => {
+             isFrameProcessing = false;
+          });
+        }
+        trackingRef.current = requestAnimationFrame(sendFrame);
+      };
+      
+      sendFrame();
+
+    } catch (err) {
+      console.error("[CAMERA] startup failed:", err);
+      isBootingRef.current = false;
+      toast({
+        title: 'Camera access error',
+        description: 'Failed to start AI vision pipeline.',
+        variant: 'destructive',
+      });
+      setInputMode('upload');
+    }
+  }, [stopCamera, toast]); // isCapturing is safely removed from dependencies
+
+  useEffect(() => {
+    if (inputMode === 'camera' && !image) {
+      startCamera();
+    } else {
+      stopCamera();
+    }
+    return () => stopCamera();
+  }, [inputMode, image, startCamera, stopCamera]);
+
+  const handleFile = useCallback((file: File) => {
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: 'Invalid file',
+        description: 'Please upload an image file (PNG, JPG, WebP).',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast({
+        title: 'File too large',
+        description: 'Please upload an image under 8 MB.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImage(reader.result as string);
+      setResult(null);
+      setError(null);
+    };
+    reader.readAsDataURL(file);
+  }, [toast]);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragActive(false);
+      const file = e.dataTransfer.files?.[0];
+      if (file) handleFile(file);
+    },
+    [handleFile]
+  );
+
+  const analyze = async () => {
+    if (!image) {
+      toast({
+        title: 'No image',
+        description: 'Please upload or capture a palm image first.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await authedFetch('/api/palm-analysis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image,
+          handType,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Request failed' }));
+        throw new Error(err.error || 'Analysis failed');
+      }
+      const data = (await res.json()) as PalmAnalysisResult;
+      setResult(data);
+      onReadingComplete({
+        type: 'palm',
+        summary: data.summary,
+        content: data.rawAnalysis ?? data.summary,
+      });
+      toast({
+        title: 'Reading complete',
+        description: 'Your palm analysis is ready.',
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Unknown error';
+      setError(msg);
+      toast({
+        title: 'Analysis failed',
+        description: msg,
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const reset = () => {
+    setImage(null);
+    setResult(null);
+    setError(null);
+    if (inputMode === 'camera') {
+      startCamera();
+    }
+  };
+
+  return (
+    <div className="space-y-8">
+      <header className="text-center">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-secondary/60 mb-3">
+          <Hand className="w-3.5 h-3.5 text-primary" />
+          <span className="text-xs uppercase tracking-wider text-muted-foreground">
+            Palm Analysis Service
+          </span>
+        </div>
+        <h1 className="font-display text-4xl md:text-5xl font-bold mb-3">
+          AI Palm Reading
+        </h1>
+        <p className="text-muted-foreground max-w-2xl mx-auto">
+          Upload a clear photo or hold your palm up to the camera. Real-time vision
+          detects your hand, crops the palm region, and synthesizes a complete analysis.
+        </p>
+      </header>
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        {/* Upload / Camera Panel */}
+        <Card className="bg-card/60 backdrop-blur border-border/50 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-display text-xl font-semibold">Your Palm</h2>
+            {image && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={reset}
+                className="text-muted-foreground"
+              >
+                <RotateCcw className="w-3.5 h-3.5 mr-1" />
+                Retake / Reset
+              </Button>
+            )}
+          </div>
+
+          {!image ? (
+            <div className="space-y-4">
+              <Tabs
+                value={inputMode}
+                onValueChange={(v) => setInputMode(v as 'upload' | 'camera')}
+                className="w-full"
+              >
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="upload">
+                    <ImageIcon className="w-4 h-4 mr-2" /> Upload
+                  </TabsTrigger>
+                  <TabsTrigger value="camera">
+                    <CameraIcon className="w-4 h-4 mr-2" /> Live Camera
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="upload" className="mt-4">
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragActive(true);
+                    }}
+                    onDragLeave={() => setDragActive(false)}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={cn(
+                      'border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all',
+                      dragActive
+                        ? 'border-primary bg-primary/10'
+                        : 'border-border hover:border-primary/50 hover:bg-secondary/20'
+                    )}
+                  >
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary/30 to-accent/30 flex items-center justify-center mx-auto mb-4 float">
+                      <Upload className="w-7 h-7 text-primary" />
+                    </div>
+                    <p className="font-medium mb-1">Drop palm image here</p>
+                    <p className="text-xs text-muted-foreground mb-4">
+                      or click to browse · PNG, JPG, WebP · max 8MB
+                    </p>
+                    <Button type="button" variant="outline" size="sm">
+                      Choose File
+                    </Button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleFile(file);
+                      }}
+                    />
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="camera" className="mt-4 space-y-3">
+                  <div className="relative rounded-xl overflow-hidden border border-border/50 bg-black aspect-[4/3] flex items-center justify-center">
+                    <video ref={videoRef} autoPlay playsInline muted className="absolute opacity-0 pointer-events-none w-full h-full" />
+
+                    <canvas
+                      ref={canvasRef}
+                      width={640}
+                      height={480}
+                      className={cn('w-full h-full object-cover', !isCameraActive && 'hidden')}
+                    />
+
+                    {!isCameraActive && (
+                      <div className="flex flex-col items-center gap-2">
+                        <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                        <span className="text-xs text-muted-foreground">Starting vision pipeline...</span>
+                      </div>
+                    )}
+
+                    {isCameraActive && (
+                      <div className="absolute inset-0 z-10 pointer-events-none flex flex-col items-center justify-center p-4">
+                        <div className="w-[70%] max-w-[280px] h-[80%] max-h-[340px] border-2 border-dashed border-primary/50 rounded-[2rem] relative flex flex-col items-center justify-center">
+                          <div className="absolute -top-1 -left-1 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-[2rem]" />
+                          <div className="absolute -top-1 -right-1 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-[2rem]" />
+                          <div className="absolute -bottom-1 -left-1 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-[2rem]" />
+                          <div className="absolute -bottom-1 -right-1 w-8 h-8 border-b-4 border-r-4 border-primary rounded-br-[2rem]" />
+
+                          <span className="text-primary font-bold tracking-widest uppercase text-[10px] bg-black/70 px-3 py-1.5 rounded-full backdrop-blur-md mt-auto mb-6">
+                            Auto-Detection Active
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="text-center p-2 rounded-lg bg-secondary/40 border border-border/40 text-xs font-medium text-muted-foreground">
+                    {cameraStatus}
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="relative rounded-xl overflow-hidden border border-border/50 bg-background/40">
+                <img
+                  src={image}
+                  alt="Captured palm"
+                  className="w-full max-h-80 object-contain"
+                />
+                <div className="absolute top-2 right-2 px-2 py-1 rounded-full bg-background/80 backdrop-blur text-xs flex items-center gap-1">
+                  <Check className="w-3 h-3 text-emerald-400" />
+                  Image Ready
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs uppercase tracking-wider text-muted-foreground mb-2 block">
+                  Which hand?
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(['left', 'right'] as const).map((h) => (
+                    <button
+                      key={h}
+                      onClick={() => setHandType(h)}
+                      className={cn(
+                        'px-4 py-2.5 rounded-lg border text-sm font-medium capitalize transition-all',
+                        handType === h
+                          ? 'border-primary bg-primary/15 text-primary'
+                          : 'border-border bg-background/40 text-muted-foreground hover:bg-secondary/40'
+                      )}
+                    >
+                      {h} hand
+                      <span className="block text-[10px] opacity-70 mt-0.5">
+                        {h === 'right' ? 'conscious self' : 'inner self'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <Button
+                onClick={analyze}
+                disabled={loading}
+                className="w-full h-12 bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-90"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Analyzing palm lines...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Reveal My Palm Reading
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
+
+          {error && (
+            <div className="mt-4 p-3 rounded-lg bg-destructive/10 border border-destructive/30 text-sm flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-destructive shrink-0 mt-0.5" />
+              <div>
+                <div className="font-medium text-destructive">Analysis failed</div>
+                <div className="text-muted-foreground text-xs mt-0.5">{error}</div>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {/* Result Panel */}
+        <Card className="bg-card/60 backdrop-blur border-border/50 p-6 min-h-[400px]">
+          <h2 className="font-display text-xl font-semibold mb-4">Reading Result</h2>
+
+          {!result && !loading && (
+            <div className="h-[300px] flex flex-col items-center justify-center text-center text-muted-foreground">
+              <Hand className="w-12 h-12 mb-3 opacity-30" />
+              <p className="text-sm">Your palm reading will appear here after analysis.</p>
+            </div>
+          )}
+
+          {loading && (
+            <div className="space-y-3">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="space-y-2">
+                  <div className="h-3 w-24 rounded shimmer" />
+                  <div className="h-12 w-full rounded shimmer" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          <AnimatePresence>
+            {result && !loading && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-4"
+              >
+                <div className="p-4 rounded-lg bg-gradient-to-br from-primary/10 to-accent/10 border border-primary/20">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <Sparkles className="w-4 h-4 text-primary" />
+                    <span className="text-xs uppercase tracking-wider text-primary font-medium">
+                      Overall Reading
+                    </span>
+                  </div>
+                  <p className="text-sm leading-relaxed">{result.summary}</p>
+                </div>
+
+                <Tabs defaultValue="lines" className="w-full">
+                  <TabsList className="grid grid-cols-2 w-full">
+                    <TabsTrigger value="lines">The Four Lines</TabsTrigger>
+                    <TabsTrigger value="personality">Personality</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="lines" className="space-y-3 mt-4">
+                    <LineReading icon={Heart} label="Heart Line" text={result.heartLine} color="text-rose-300" />
+                    <LineReading icon={Brain} label="Head Line" text={result.headLine} color="text-sky-300" />
+                    <LineReading icon={Activity} label="Life Line" text={result.lifeLine} color="text-emerald-300" />
+                    <LineReading icon={Compass} label="Fate Line" text={result.fateLine} color="text-amber-300" />
+                  </TabsContent>
+
+                  <TabsContent value="personality" className="space-y-4 mt-4">
+                    <div>
+                      <h3 className="text-sm font-semibold mb-2 text-primary">Personality Synthesis</h3>
+                      <p className="text-sm text-muted-foreground leading-relaxed">{result.personality}</p>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold mb-2 text-primary">Recommendations</h3>
+                      <ul className="space-y-2">
+                        {result.recommendations?.map((r, i) => (
+                          <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
+                            <span className="text-primary mt-0.5">·</span>
+                            <span>{r}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </TabsContent>
+                </Tabs>
+
+                {result.id && (
+                  <p className="text-[11px] text-muted-foreground/70 text-center pt-2">
+                    Saved to your history · ID: {result.id.slice(0, 8)}…
+                  </p>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </Card>
+      </div>
+
+      {/* Guidance Tips */}
+      <Card className="bg-card/40 border-border/50 p-6">
+        <h3 className="font-display text-lg font-semibold mb-3">Tips for a Clear Reading</h3>
+        <div className="grid sm:grid-cols-3 gap-4 text-sm">
+          <div>
+            <div className="font-medium text-primary mb-1">Good lighting</div>
+            <p className="text-muted-foreground">
+              Natural daylight is best. Avoid harsh shadows across the palm.
+            </p>
+          </div>
+          <div>
+            <div className="font-medium text-primary mb-1">Open the hand</div>
+            <p className="text-muted-foreground">
+              Hold fingers open and steady inside the box until the shutter locks.
+            </p>
+          </div>
+          <div>
+            <div className="font-medium text-primary mb-1">Frame the whole palm</div>
+            <p className="text-muted-foreground">
+              Keep your wrist and the base of your fingers in view.
+            </p>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function LineReading({ icon: Icon, label, text, color }: { icon: React.ComponentType<{ className?: string }>; label: string; text: string; color: string; }) {
+  return (
+    <div className="p-3 rounded-lg bg-background/40 border border-border/50">
+      <div className="flex items-center gap-2 mb-1.5">
+        <Icon className={cn('w-4 h-4', color)} />
+        <span className="text-sm font-medium">{label}</span>
+      </div>
+      <p className="text-xs text-muted-foreground leading-relaxed">{text}</p>
+    </div>
+  );
+}
