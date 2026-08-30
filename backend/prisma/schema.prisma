@@ -18,14 +18,14 @@ model User {
   role         String   @default("User") // Roles: user, palm_reader, tarot_reader, spiritual_consultant, admin
   createdAt    DateTime @default(now())
 
-  // Relations (Adding these does NOT delete your existing data)
-  profile               Profile?
-  preferences           Preference?
-  readings              Reading[]
-  notifications         Notification[]
-  activityLogs          ActivityLog[]
-  reports               Report[]
-  clientConsultations   Consultation[] @relation("ClientConsultations")
+  // Relations
+  profile                 Profile?
+  preferences             Preference?
+  readings                Reading[]
+  notifications           Notification[]
+  activityLogs            ActivityLog[]
+  reports                 Report[]
+  clientConsultations     Consultation[] @relation("ClientConsultations")
   specialistConsultations Consultation[] @relation("SpecialistConsultations")
 }
 
@@ -39,17 +39,34 @@ model Profile {
   primaryGoal        String?
   bio                String?
   avatarUrl          String?
+  
+  // NEW FIELDS FOR UI
+  ageGroup           String?
+  spiritualInterests String[] 
+  secondaryGoals     String[]
+  guidanceAreas      String[]
+  preferredTopics    String[]
+
   updatedAt          DateTime @updatedAt
 }
 
 model Preference {
-  id               String   @id @default(uuid())
-  userId           String   @unique
-  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  emailAlerts      Boolean  @default(true)
-  readingDepth     String   @default("standard") // standard, deep
-  uiTheme          String   @default("dark")
-  updatedAt        DateTime @updatedAt
+  id                          String   @id @default(uuid())
+  userId                      String   @unique
+  user                        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailAlerts                 Boolean  @default(true)
+  readingDepth                String   @default("standard") // standard, deep
+  uiTheme                     String   @default("dark")
+
+  // NEW FIELDS FOR UI
+  readingStyle                String   @default("short")
+  dailyGuidance               Boolean  @default(true)
+  readingReminders            Boolean  @default(true)
+  insightUpdates              Boolean  @default(true)
+  personalizedRecommendations Boolean  @default(true)
+  saveReadingHistory          Boolean  @default(true)
+
+  updatedAt                   DateTime @updatedAt
 }
 
 // 2. Document Store & Vector Domain
@@ -65,7 +82,7 @@ model Reading {
   imageUrl             String?
   isHidden             Boolean  @default(false)
   createdAt            DateTime @default(now())
-  
+
   consultations        Consultation[]
 }
 

@@ -24,8 +24,10 @@ import { InsightsSection } from '@/components/sections/insights-section';
 import { HistorySection } from '@/components/sections/history-section';
 import { AuthScreen } from '@/components/auth/auth-screen';
 import { useAuth } from '@/components/auth/auth-provider';
+import { ProfileSection } from '@/components/sections/profile-section';
 
-export type SectionId = 'home' | 'palm' | 'tarot' | 'insights' | 'history';
+// 1. Added 'profile' to your valid sections
+export type SectionId = 'home' | 'palm' | 'tarot' | 'insights' | 'history' | 'profile';
 
 interface NavItem {
   id: SectionId;
@@ -34,6 +36,7 @@ interface NavItem {
   requiresAuth?: boolean;
 }
 
+// Profile is intentionally left out of this array so it doesn't show in the main Nav
 const NAV_ITEMS: NavItem[] = [
   { id: 'home', label: 'Home', icon: Sparkles },
   { id: 'palm', label: 'Palm Reading', icon: Hand, requiresAuth: true },
@@ -172,12 +175,16 @@ export default function Home() {
             {user ? (
               <div className="flex items-center gap-2">
                 {user?.name && (
-                  <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/60 border border-border/50">
+                  // 2. Made this pill a clickable button that triggers navigate('profile')
+                  <button 
+                    onClick={() => navigate('profile')}
+                    className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/60 border border-border/50 hover:bg-secondary/80 transition-colors cursor-pointer"
+                  >
                     <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-xs font-bold text-primary-foreground">
                       {user.name.charAt(0).toUpperCase()}
                     </div>
                     <span className="text-sm font-medium">{user.name}</span>
-                  </div>
+                  </button>
                 )}
                 <Button
                   variant="ghost"
@@ -224,6 +231,18 @@ export default function Home() {
               className="lg:hidden overflow-hidden border-t border-border/50 bg-background/95"
             >
               <div className="container mx-auto px-4 py-2 flex flex-col gap-1">
+                {user?.name && (
+                  // Also added the profile click to the mobile menu user pill
+                  <button
+                    onClick={() => navigate('profile')}
+                    className="w-full text-left px-4 py-3 rounded-md flex items-center gap-3 bg-secondary/30 mb-2 border border-border/50"
+                  >
+                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-xs font-bold text-primary-foreground">
+                      {user.name.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="text-sm font-medium text-foreground">{user.name}</span>
+                  </button>
+                )}
                 {NAV_ITEMS.map((item) => {
                   const Icon = item.icon;
                   const active = section === item.id;
@@ -275,6 +294,7 @@ export default function Home() {
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.4, ease: 'easeOut' }}
           >
+            {/* 3. Added ProfileSection to the main render loop */}
             {showAuthScreen ? (
               <AuthScreen />
             ) : section === 'home' ? (
@@ -287,6 +307,8 @@ export default function Home() {
               <InsightsSection readings={savedReadings} />
             ) : section === 'history' ? (
               <HistorySection />
+            ) : section === 'profile' ? (
+              <ProfileSection />
             ) : null}
           </motion.div>
         </AnimatePresence>
