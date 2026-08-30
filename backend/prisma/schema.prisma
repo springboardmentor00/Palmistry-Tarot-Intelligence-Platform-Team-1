@@ -38,6 +38,7 @@ model Profile {
   relationshipStatus String?
   primaryGoal        String?
   bio                String?
+  avatarUrl          String?
   updatedAt          DateTime @updatedAt
 }
 
@@ -61,6 +62,8 @@ model Reading {
   personalitySynthesis String?  // Deep AI output
   rawData              Json     // The JSONB document: CV points, Tarot spreads, etc.
   vectorEmbedding      Json?    // AI similarity data (FAISS equivalent)
+  imageUrl             String?
+  isHidden             Boolean  @default(false)
   createdAt            DateTime @default(now())
   
   consultations        Consultation[]

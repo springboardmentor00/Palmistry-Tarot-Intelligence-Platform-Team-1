@@ -1,51 +1,62 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   History,
   Hand,
   Layers,
-  Brain,
   Trash2,
   RefreshCw,
   Inbox,
   Loader2,
+  Sparkles,
+  ChevronRight,
+  Search,
+  UserCheck,
+  Calendar,
+  HelpCircle,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useAuthedFetch } from '@/components/auth/auth-provider';
 import { cn } from '@/lib/utils';
 
+// ... (Interfaces remain exactly the same)
 interface PalmReadingRecord {
   id: string;
   handType: string;
   summary: string;
-  lifeLine: string | null;
-  heartLine: string | null;
-  headLine: string | null;
-  fateLine: string | null;
+  personalitySynthesis: string;
+  lines: Record<string, { detected: boolean; confidence: number; points: number[][] }>;
+  imageUrl?: string | null;
   createdAt: string;
+}
+
+interface TarotCardDraw {
+  cardId: string;
+  orientation: 'upright' | 'reversed';
+  position: string;
 }
 
 interface TarotReadingRecord {
   id: string;
   spreadType: string;
   question: string | null;
-  cardIds: string;
-  cardOrientations: string;
+  draw: TarotCardDraw[];
   interpretation: string;
   summary: string;
-  createdAt: string;
-}
-
-interface InsightRecord {
-  id: string;
-  type: string;
-  title: string;
-  content: string;
   createdAt: string;
 }
 
@@ -53,12 +64,18 @@ interface HistoryData {
   user: { id: string; name: string };
   palmReadings: PalmReadingRecord[];
   tarotReadings: TarotReadingRecord[];
-  insights: InsightRecord[];
+  insights: any[];
 }
 
 export function HistorySection() {
   const [data, setData] = useState<HistoryData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedReading, setSelectedReading] = useState<{
+    type: 'palm' | 'tarot';
+    data: PalmReadingRecord | TarotReadingRecord;
+  } | null>(null);
+
   const { toast } = useToast();
   const authedFetch = useAuthedFetch();
 
@@ -66,12 +83,12 @@ export function HistorySection() {
     setLoading(true);
     try {
       const res = await authedFetch('/api/history');
-      if (!res.ok) throw new Error('Failed to fetch history');
+      if (!res.ok) throw new Error('Failed to load history');
       const json = await res.json();
       setData(json);
     } catch (e) {
       toast({
-        title: 'Failed to load history',
+        title: 'Error loading history',
         description: e instanceof Error ? e.message : 'Unknown error',
         variant: 'destructive',
       });
@@ -84,13 +101,12 @@ export function HistorySection() {
     load();
   }, [load]);
 
-  const remove = async (type: 'palm' | 'tarot' | 'insight', id: string) => {
+  const remove = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
     try {
-      const res = await authedFetch(`/api/history?type=${type}&id=${id}`, {
-        method: 'DELETE',
-      });
+      const res = await authedFetch(`/api/history?id=${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete');
-      toast({ title: 'Deleted', description: 'Reading removed from history.' });
+      toast({ title: 'Removed', description: 'Reading archived from history.' });
       load();
     } catch (e) {
       toast({
@@ -101,268 +117,352 @@ export function HistorySection() {
     }
   };
 
+  const filteredTarot = useMemo(() => {
+    if (!data) return [];
+    if (!searchTerm.trim()) return data.tarotReadings;
+    const term = searchTerm.toLowerCase();
+    return data.tarotReadings.filter(
+      (r) =>
+        r.spreadType.toLowerCase().includes(term) ||
+        (r.question && r.question.toLowerCase().includes(term)) ||
+        r.summary.toLowerCase().includes(term) ||
+        r.interpretation.toLowerCase().includes(term)
+    );
+  }, [data, searchTerm]);
+
+  const filteredPalm = useMemo(() => {
+    if (!data) return [];
+    if (!searchTerm.trim()) return data.palmReadings;
+    const term = searchTerm.toLowerCase();
+    return data.palmReadings.filter(
+      (r) =>
+        r.handType.toLowerCase().includes(term) ||
+        r.summary.toLowerCase().includes(term) ||
+        r.personalitySynthesis.toLowerCase().includes(term)
+    );
+  }, [data, searchTerm]);
+
   if (loading) {
     return (
       <div className="py-32 text-center">
         <Loader2 className="w-8 h-8 text-primary mx-auto mb-3 animate-spin" />
-        <p className="text-sm text-muted-foreground">Loading your history…</p>
+        <p className="text-sm text-muted-foreground">Loading reading archives…</p>
       </div>
     );
   }
 
   if (!data) return null;
 
-  const total = data.palmReadings.length + data.tarotReadings.length + data.insights.length;
-
   return (
-    <div className="space-y-8">
-      <header className="text-center">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-secondary/60 mb-3">
+    <div className="space-y-8 max-w-4xl mx-auto">
+      <header className="text-center space-y-2">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-secondary/60 mb-1">
           <History className="w-3.5 h-3.5 text-primary" />
           <span className="text-xs uppercase tracking-wider text-muted-foreground">
-            History & Analytics Service
+            Reading Vault & History
           </span>
         </div>
-        <h1 className="font-display text-4xl md:text-5xl font-bold mb-3">
-          Your Reading History
-        </h1>
-        <p className="text-muted-foreground max-w-2xl mx-auto">
-          Every reading is persisted to the platform database. Revisit past
-          insights, track your spiritual journey, and remove records you no
-          longer need.
+        <h1 className="font-display text-3xl md:text-4xl font-bold">Your Spiritual Timeline</h1>
+        <p className="text-sm text-muted-foreground max-w-xl mx-auto">
+          Review saved readings, inspect detected palm line features, and request human specialist reviews.
         </p>
-        <div className="flex items-center justify-center gap-2 mt-4">
-          <Button variant="outline" size="sm" onClick={load} className="border-border/50">
+        <div className="pt-2 flex items-center justify-center gap-3">
+          <div className="relative w-full max-w-xs">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Search readings..."
+              className="pl-8 h-9 text-xs"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <Button variant="outline" size="sm" onClick={load} className="h-9">
             <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
             Refresh
           </Button>
         </div>
       </header>
 
-      {total === 0 ? (
-        <Card className="bg-card/60 backdrop-blur border-border/50 p-12 text-center">
-          <Inbox className="w-12 h-12 text-muted-foreground/50 mx-auto mb-3" />
-          <h3 className="font-display text-xl font-semibold mb-1">
-            No readings yet
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            Complete a palm or tarot reading to start building your history.
-          </p>
-        </Card>
-      ) : (
-        <Tabs defaultValue="palm" className="w-full">
-          <TabsList className="grid grid-cols-3 w-full max-w-md mx-auto">
-            <TabsTrigger value="palm">
-              Palm ({data.palmReadings.length})
-            </TabsTrigger>
-            <TabsTrigger value="tarot">
-              Tarot ({data.tarotReadings.length})
-            </TabsTrigger>
-            <TabsTrigger value="insights">
-              Insights ({data.insights.length})
-            </TabsTrigger>
-          </TabsList>
+      <Tabs defaultValue="tarot" className="w-full">
+        <TabsList className="grid grid-cols-2 w-full max-w-xs mx-auto">
+          <TabsTrigger value="tarot">Tarot ({filteredTarot.length})</TabsTrigger>
+          <TabsTrigger value="palm">Palmistry ({filteredPalm.length})</TabsTrigger>
+        </TabsList>
 
-          {/* Palm readings */}
-          <TabsContent value="palm" className="mt-6 space-y-3">
-            {data.palmReadings.length === 0 ? (
-              <EmptyState text="No palm readings saved yet." />
-            ) : (
-              data.palmReadings.map((r, i) => (
-                <motion.div
-                  key={r.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.05 }}
-                >
-                  <Card className="bg-card/60 backdrop-blur border-border/50 p-5">
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-rose-500/20 flex items-center justify-center">
-                          <Hand className="w-4 h-4 text-rose-300" />
-                        </div>
-                        <div>
-                          <div className="text-sm font-medium capitalize">
-                            {r.handType} hand
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {new Date(r.createdAt).toLocaleString()}
-                          </div>
-                        </div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => remove('palm', r.id)}
-                        className="text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                    <p className="text-sm text-muted-foreground leading-relaxed mb-3">
-                      {r.summary}
-                    </p>
-                    <div className="grid sm:grid-cols-2 gap-2 text-xs">
-                      {r.heartLine && (
-                        <LineMini label="Heart" text={r.heartLine} />
-                      )}
-                      {r.headLine && <LineMini label="Head" text={r.headLine} />}
-                      {r.lifeLine && <LineMini label="Life" text={r.lifeLine} />}
-                      {r.fateLine && <LineMini label="Fate" text={r.fateLine} />}
-                    </div>
-                  </Card>
-                </motion.div>
-              ))
-            )}
-          </TabsContent>
-
-          {/* Tarot readings */}
-          <TabsContent value="tarot" className="mt-6 space-y-3">
-            {data.tarotReadings.length === 0 ? (
-              <EmptyState text="No tarot readings saved yet." />
-            ) : (
-              data.tarotReadings.map((r, i) => {
-                const cards: string[] =
-                  r.cardIds && r.cardIds !== 'undefined'
-                    ? JSON.parse(r.cardIds)
-                    : [];
-                const orientations: boolean[] =
-                  r.cardOrientations && r.cardOrientations !== 'undefined'
-                    ? JSON.parse(r.cardOrientations)
-                    : [];
-                return (
-                  <motion.div
-                    key={r.id}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.05 }}
-                  >
-                    <Card className="bg-card/60 backdrop-blur border-border/50 p-5">
-                      <div className="flex items-start justify-between gap-3 mb-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-lg bg-violet-500/20 flex items-center justify-center">
-                            <Layers className="w-4 h-4 text-violet-300" />
-                          </div>
-                          <div>
-                            <div className="text-sm font-medium capitalize">
-                              {r.spreadType.replace(/-/g, ' ')} spread
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {new Date(r.createdAt).toLocaleString()}
-                            </div>
-                          </div>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => remove('tarot', r.id)}
-                          className="text-muted-foreground hover:text-destructive"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </Button>
-                      </div>
+        {/* TAROT READINGS LIST - FIXED SPACING */}
+        <TabsContent value="tarot" className="mt-6 space-y-3">
+          {filteredTarot.length === 0 ? (
+            <EmptyState text={searchTerm ? 'No matching tarot readings found.' : 'No tarot readings saved yet.'} />
+          ) : (
+            filteredTarot.map((r) => (
+              <Card
+                key={r.id}
+                onClick={() => setSelectedReading({ type: 'tarot', data: r })}
+                className="p-4 cursor-pointer hover:bg-accent/40 transition flex flex-row items-center justify-between border-border/50 group w-full"
+              >
+                <div className="flex flex-row items-center gap-4 flex-1 min-w-0">
+                  <div className="w-10 h-10 rounded-lg bg-violet-500/15 flex items-center justify-center shrink-0">
+                    <Layers className="w-5 h-5 text-violet-400" />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-semibold text-sm capitalize truncate">{r.spreadType}</h4>
                       {r.question && (
-                        <p className="text-xs italic text-muted-foreground mb-2">
-                          Q: {r.question}
-                        </p>
+                        <Badge variant="outline" className="text-[10px] font-normal py-0 shrink-0">
+                          Q: {r.question.slice(0, 20)}...
+                        </Badge>
                       )}
-                      <div className="flex flex-wrap gap-1.5 mb-3">
-                        {cards.map((c, idx) => {
-                          const id = c;
-                          const name = id
-                            .replace('major-', '')
-                            .replace('minor-', '')
-                            .replace(/-/g, ' ');
-                          return (
-                            <span
-                              key={idx}
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">{r.summary}</p>
+                    <div className="flex items-center gap-2 mt-1 text-[11px] text-muted-foreground/80">
+                      <Calendar className="w-3 h-3" />
+                      {new Date(r.createdAt).toLocaleDateString()} at {new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-row items-center gap-1 shrink-0 ml-4">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => remove(r.id, e)}
+                    className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition h-8 w-8"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                  <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                </div>
+              </Card>
+            ))
+          )}
+        </TabsContent>
+
+        {/* PALM READINGS LIST - FIXED SPACING */}
+        <TabsContent value="palm" className="mt-6 space-y-3">
+          {filteredPalm.length === 0 ? (
+            <EmptyState text={searchTerm ? 'No matching palm readings found.' : 'No palm readings saved yet.'} />
+          ) : (
+            filteredPalm.map((r) => (
+              <Card
+                key={r.id}
+                onClick={() => setSelectedReading({ type: 'palm', data: r })}
+                className="p-4 cursor-pointer hover:bg-accent/40 transition flex flex-row items-center justify-between border-border/50 group w-full"
+              >
+                <div className="flex flex-row items-center gap-4 flex-1 min-w-0">
+                  <div className="w-10 h-10 rounded-lg bg-rose-500/15 flex items-center justify-center shrink-0">
+                    <Hand className="w-5 h-5 text-rose-400" />
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-semibold text-sm capitalize truncate">{r.handType} Hand Scan</h4>
+                      <Badge variant="secondary" className="text-[10px] font-normal py-0 shrink-0">
+                        {Object.values(r.lines).filter((l) => l.detected).length} lines detected
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">{r.summary}</p>
+                    <div className="flex items-center gap-2 mt-1 text-[11px] text-muted-foreground/80">
+                      <Calendar className="w-3 h-3" />
+                      {new Date(r.createdAt).toLocaleDateString()} at {new Date(r.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex flex-row items-center gap-1 shrink-0 ml-4">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={(e) => remove(r.id, e)}
+                    className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition h-8 w-8"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                  <ChevronRight className="w-5 h-5 text-muted-foreground" />
+                </div>
+              </Card>
+            ))
+          )}
+        </TabsContent>
+      </Tabs>
+
+      {/* DEEP DIVE MODAL */}
+      <Dialog open={!!selectedReading} onOpenChange={(open) => !open && setSelectedReading(null)}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          {selectedReading && (
+            <>
+              <DialogHeader>
+                <div className="flex items-center gap-2 mb-1">
+                  {selectedReading.type === 'tarot' ? (
+                    <Badge className="bg-violet-500/20 text-violet-300 border-violet-500/30">Tarot Reading</Badge>
+                  ) : (
+                    <Badge className="bg-rose-500/20 text-rose-300 border-rose-500/30">Palmistry Analysis</Badge>
+                  )}
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(selectedReading.data.createdAt).toLocaleString()}
+                  </span>
+                </div>
+                <DialogTitle className="text-2xl font-bold">
+                  {selectedReading.type === 'tarot'
+                    ? (selectedReading.data as TarotReadingRecord).spreadType
+                    : `${(selectedReading.data as PalmReadingRecord).handType} Hand Scan`}
+                </DialogTitle>
+                <DialogDescription>
+                  {selectedReading.type === 'tarot' && (selectedReading.data as TarotReadingRecord).question ? (
+                    <span className="flex items-center gap-1.5 text-xs italic text-foreground/80">
+                      <HelpCircle className="w-3.5 h-3.5 text-primary" />
+                      Inquiry: &quot;{(selectedReading.data as TarotReadingRecord).question}&quot;
+                    </span>
+                  ) : (
+                    selectedReading.data.summary
+                  )}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-6 mt-4">
+                
+                {/* TAROT SPECIFIC: CARD IMAGES & SPREAD */}
+                {selectedReading.type === 'tarot' && (
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      The Spread
+                    </h4>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      {(selectedReading.data as TarotReadingRecord).draw.map((d, idx) => (
+                        <div key={idx} className="flex flex-col items-center gap-2 bg-secondary/20 p-3 rounded-xl border border-border/50">
+                          <div className="text-[10px] text-muted-foreground uppercase font-semibold text-center h-4">
+                            {d.position}
+                          </div>
+                          {/* CARD IMAGE FRAME */}
+                          <div className="relative w-full max-w-[120px] aspect-[1/1.7] rounded-lg overflow-hidden border border-border shadow-md bg-muted">
+                            <img 
+                              src={`/cards/${d.cardId}.jpg`} 
+                              alt={d.cardId}
                               className={cn(
-                                'text-[10px] px-2 py-0.5 rounded-full',
-                                orientations[idx]
-                                  ? 'bg-primary/20 text-primary'
-                                  : 'bg-destructive/20 text-destructive'
+                                "w-full h-full object-cover transition-transform duration-500",
+                                d.orientation === 'reversed' && "rotate-180"
                               )}
-                              title={orientations[idx] ? 'Upright' : 'Reversed'}
+                              onError={(e) => { 
+                                // Fallback if image isn't placed in public/tarot/ yet
+                                e.currentTarget.style.display = 'none'; 
+                                e.currentTarget.parentElement?.classList.add('flex', 'items-center', 'justify-center');
+                                e.currentTarget.parentElement?.insertAdjacentHTML('beforeend', `<span class="text-xs text-muted-foreground p-2 text-center">${d.cardId}</span>`);
+                              }}
+                            />
+                          </div>
+                          <div className="text-center mt-1">
+                            <div className="font-medium text-sm capitalize leading-tight">
+                              {d.cardId.replace('major-', '').replace('minor-', '').replace(/-/g, ' ')}
+                            </div>
+                            <Badge
+                              variant={d.orientation === 'upright' ? 'default' : 'destructive'}
+                              className="mt-1.5 text-[10px] h-4 py-0"
                             >
-                              {name} {orientations[idx] ? '↑' : '↓'}
-                            </span>
+                              {d.orientation === 'upright' ? 'Upright ↑' : 'Reversed ↓'}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* PALM SPECIFIC: IMAGE + STATS LAYOUT */}
+                {selectedReading.type === 'palm' && (
+                  <div className="flex flex-col md:flex-row gap-6">
+                    {/* LEFT COLUMN: PALM PHOTO */}
+                    <div className="w-full md:w-1/3 aspect-[3/4] bg-secondary/30 rounded-xl overflow-hidden border border-border/50 flex flex-col items-center justify-center shrink-0 shadow-inner relative">
+                      {(selectedReading.data as PalmReadingRecord).imageUrl ? (
+                        <img 
+                          src={(selectedReading.data as PalmReadingRecord).imageUrl!} 
+                          alt="Palm Scan" 
+                          className="w-full h-full object-cover" 
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center gap-3 text-muted-foreground p-6 text-center">
+                          <ImageIcon className="w-10 h-10 opacity-20" />
+                          <span className="text-xs opacity-60">Image not saved for this legacy scan. New scans will appear here.</span>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* RIGHT COLUMN: LINE CONFIDENCES */}
+                    <div className="flex-1 space-y-3">
+                      <h4 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Detected Features
+                      </h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {Object.entries((selectedReading.data as PalmReadingRecord).lines).map(([name, val]) => {
+                          const label = name.replace('_', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+                          const pct = Math.round((val.confidence || 0) * 100);
+                          return (
+                            <div key={name} className="p-3 rounded-lg border border-border/60 bg-secondary/20">
+                              <div className="text-[11px] text-muted-foreground">{label}</div>
+                              <div className="flex items-center justify-between mt-1">
+                                <span className={cn('text-sm font-semibold', val.detected ? 'text-primary' : 'text-muted-foreground')}>
+                                  {val.detected ? `${pct}%` : 'Not Detected'}
+                                </span>
+                                {val.detected && (
+                                  <span className="text-[10px] text-muted-foreground">
+                                    {val.points.length} pts
+                                  </span>
+                                )}
+                              </div>
+                              <div className="w-full bg-secondary h-1.5 rounded-full mt-2 overflow-hidden">
+                                <div
+                                  className={cn('h-full rounded-full', val.detected ? 'bg-primary' : 'bg-muted')}
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                            </div>
                           );
                         })}
                       </div>
-                      <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
-                        {r.interpretation}
-                      </p>
-                    </Card>
-                  </motion.div>
-                );
-              })
-            )}
-          </TabsContent>
-
-          {/* Insights */}
-          <TabsContent value="insights" className="mt-6 space-y-3">
-            {data.insights.length === 0 ? (
-              <EmptyState text="No insights synthesized yet." />
-            ) : (
-              data.insights.map((r, i) => (
-                <motion.div
-                  key={r.id}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.05 }}
-                >
-                  <Card className="bg-card/60 backdrop-blur border-border/50 p-5">
-                    <div className="flex items-start justify-between gap-3 mb-2">
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center">
-                          <Brain className="w-4 h-4 text-emerald-300" />
-                        </div>
-                        <div>
-                          <div className="text-sm font-medium capitalize">
-                            {r.type} · {r.title}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {new Date(r.createdAt).toLocaleString()}
-                          </div>
-                        </div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => remove('insight', r.id)}
-                        className="text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
                     </div>
-                    <p className="text-sm text-muted-foreground leading-relaxed">
-                      {r.content}
-                    </p>
-                  </Card>
-                </motion.div>
-              ))
-            )}
-          </TabsContent>
-        </Tabs>
-      )}
-    </div>
-  );
-}
+                  </div>
+                )}
 
-function LineMini({ label, text }: { label: string; text: string }) {
-  return (
-    <div className="p-2 rounded-md bg-background/40 border border-border/40">
-      <div className="text-[10px] uppercase tracking-wider text-primary mb-0.5">
-        {label}
-      </div>
-      <div className="text-muted-foreground line-clamp-2">{text}</div>
+                {/* AI SYNTHESIS / INTERPRETATION */}
+                <div className="p-5 rounded-xl border border-primary/20 bg-primary/5 space-y-2 shadow-sm">
+                  <div className="flex items-center gap-2 text-primary text-sm font-semibold">
+                    <Sparkles className="w-4 h-4" />
+                    AI Holistic Interpretation
+                  </div>
+                  <div className="text-sm leading-relaxed text-foreground/90 whitespace-pre-wrap font-sans">
+                    {selectedReading.type === 'tarot'
+                      ? (selectedReading.data as TarotReadingRecord).interpretation
+                      : (selectedReading.data as PalmReadingRecord).personalitySynthesis}
+                  </div>
+                </div>
+
+                {/* ACTION: CONSULTATION TRIGGER */}
+                <div className="pt-4 border-t border-border/50 flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <span className="text-xs text-muted-foreground text-center sm:text-left">
+                    Want a human expert to deeply analyze these results?
+                  </span>
+                  <Button
+                    size="sm"
+                    className="gap-1.5 text-xs w-full sm:w-auto"
+                    onClick={() => {
+                      toast({
+                        title: 'Consultation Dispatch',
+                        description: `Requesting specialist review for reading #${selectedReading.data.id.slice(0, 8)}...`,
+                      });
+                    }}
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    Request Specialist Review
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
 function EmptyState({ text }: { text: string }) {
   return (
-    <Card className="bg-card/40 border-border/50 p-10 text-center text-muted-foreground">
+    <Card className="p-12 text-center text-muted-foreground border-dashed border border-border/60 bg-card/40">
       <Inbox className="w-8 h-8 mx-auto mb-2 opacity-40" />
       <p className="text-sm">{text}</p>
     </Card>
