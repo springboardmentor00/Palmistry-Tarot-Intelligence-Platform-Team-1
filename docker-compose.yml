@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  # Relational Database (Auth & Users Only)
+  postgres:
+    image: postgres:15-alpine
+    container_name: mystica-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: mystica_secret_password
+      POSTGRES_DB: mystica_auth
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
