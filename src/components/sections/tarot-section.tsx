@@ -12,7 +12,9 @@ import {
   Wand2,
   ArrowRight,
   Undo2,
+  ClipboardList,
 } from 'lucide-react';
+import { TarotReaderSection } from '@/components/sections/tarot-reader-section';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
@@ -41,8 +43,10 @@ interface TarotSectionProps {
 }
 
 type Phase = 'select' | 'drawing' | 'reveal' | 'interpreting' | 'interpreted';
+type TarotView = 'reading' | 'workspace';
 
 export function TarotSection({ onReadingComplete }: TarotSectionProps) {
+  const [view, setView] = useState<TarotView>('reading');
   const [phase, setPhase] = useState<Phase>('select');
   const [spread, setSpread] = useState<SpreadDefinition | null>(null);
   const [question, setQuestion] = useState('');
@@ -163,6 +167,35 @@ export function TarotSection({ onReadingComplete }: TarotSectionProps) {
     if (spread) startDraw(spread);
   };
 
+  if (view === 'workspace') {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-center">
+          <div className="inline-flex rounded-lg border border-border/50 bg-card/40 p-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setView('reading')}
+              className="text-muted-foreground"
+            >
+              <Layers className="w-4 h-4 mr-2" />
+              Tarot Reading
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
+              className="bg-gradient-to-r from-primary to-accent text-primary-foreground"
+            >
+              <ClipboardList className="w-4 h-4 mr-2" />
+              Reader Workspace
+            </Button>
+          </div>
+        </div>
+        <TarotReaderSection />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       <header className="text-center">
@@ -179,6 +212,28 @@ export function TarotSection({ onReadingComplete }: TarotSectionProps) {
           Choose a spread, draw from the 78-card Rider-Waite deck, and let the
           AI weave a narrative interpretation of the cards in their positions.
         </p>
+
+        <div className="flex justify-center mt-6">
+          <div className="inline-flex rounded-lg border border-border/50 bg-card/40 p-1">
+            <Button
+              variant="default"
+              size="sm"
+              className="bg-gradient-to-r from-primary to-accent text-primary-foreground"
+            >
+              <Layers className="w-4 h-4 mr-2" />
+              Tarot Reading
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setView('workspace')}
+              className="text-muted-foreground"
+            >
+              <ClipboardList className="w-4 h-4 mr-2" />
+              Reader Workspace
+            </Button>
+          </div>
+        </div>
       </header>
 
       <AnimatePresence mode="wait">
