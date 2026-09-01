@@ -1,12 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Activity,
   AlertCircle,
-  ArrowLeft,
   ArrowRight,
   Bot,
   Brain,
@@ -29,7 +27,6 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { Starfield } from '@/components/starfield';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -40,6 +37,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth, useAuthedFetch } from '@/components/auth/auth-provider';
 
 interface PalmConsultationTicket {
   id: string;
@@ -87,7 +85,8 @@ interface SpecialistNotesProps {
   onCompleteReview: (ticketId: string, notes: string) => Promise<void>;
 }
 
-const AUTHORIZED_ROLES = ['Palm Reader', 'Palm Reader Specialist', 'PalmReader', 'Administrator'];
+// Added backend roles to match your Prisma schema
+const AUTHORIZED_ROLES = ['palm_reader', 'admin', 'Palm Reader', 'Palm Reader Specialist', 'PalmReader', 'Administrator'];
 
 const INITIAL_TICKETS: PalmConsultationTicket[] = [
   {
@@ -639,21 +638,67 @@ function SpecialistNotes({ ticket, onCompleteReview }: SpecialistNotesProps) {
   );
 }
 
-export default function PalmConsultationPage() {
-  const router = useRouter();
-  const user = { name: 'Palm Specialist', role: 'Palm Reader Specialist' };
-  const [tickets, setTickets] = useState<PalmConsultationTicket[]>(INITIAL_TICKETS);
-  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(INITIAL_TICKETS[0]?.id ?? null);
+// 1. Converted to a standard exported component
+export function PalmConsultationSection() {
+  const { user } = useAuth();
+  const authedFetch = useAuthedFetch();
+  const [tickets, setTickets] = useState<PalmConsultationTicket[]>([]);
+  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchTickets = useCallback(() => {
+  const fetchTickets = useCallback(async () => {
     setLoading(true);
     setError(null);
-    setTickets(INITIAL_TICKETS);
-    setSelectedTicketId(INITIAL_TICKETS[0]?.id ?? null);
-    setLoading(false);
-  }, []);
+    try {
+      const res = await authedFetch('/api/consultations');
+      if (!res.ok) throw new Error('Failed to fetch queue');
+      const data = await res.json();
+      
+      // Map the PostgreSQL Database Consultation to the UI's Ticket interface
+      const formattedTickets: PalmConsultationTicket[] = data.map((t: any) => {
+        let rawData: any = {};
+        try { rawData = typeof t.reading?.rawData === 'string' ? JSON.parse(t.reading.rawData) : (t.reading?.rawData || {}); } catch(e) {}
+        
+        const lines = rawData.lines || {};
+        const getConf = (key: string) => (lines[key]?.confidence || 0.85); // fallback to 85% if missing
+
+        return {
+          id: t.id,
+          ticketId: `PALM-${t.id.substring(0, 8).toUpperCase()}`,
+          clientName: t.client?.name || 'Seeker',
+          clientEmail: t.client?.email || 'seeker@mystica.com',
+          submissionDate: new Date(t.createdAt).toLocaleString(),
+          status: t.status === 'Completed' ? 'Completed' : 'Pending',
+          palmImageUrl: t.reading?.imageUrl || '/sample-palm.jpg', // Fallback image
+          handType: rawData.handType || 'right',
+          linesConfidence: {
+            lifeLine: getConf('life_line'),
+            headLine: getConf('head_line'),
+            heartLine: getConf('heart_line'),
+            fateLine: getConf('fate_line'),
+            sunLine: getConf('sun_line'),
+          },
+          geminiSynthesis: t.reading?.personalitySynthesis || t.reading?.summary || 'No AI synthesis available for this older record.',
+          specialistNotes: t.specialistNotes ? JSON.parse(t.specialistNotes).notes : '',
+        };
+      });
+
+      setTickets(formattedTickets);
+      
+      // Auto-select the first pending ticket if none is selected
+      const pending = formattedTickets.filter(t => t.status === 'Pending');
+      if (pending.length > 0) {
+        setSelectedTicketId(pending[0].id);
+      } else {
+        setSelectedTicketId(null);
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [authedFetch]);
 
   useEffect(() => {
     fetchTickets();
@@ -664,142 +709,152 @@ export default function PalmConsultationPage() {
   };
 
   const handleCompleteReview = async (ticketId: string, notes: string) => {
-    setTickets((prev) =>
-      prev.map((t) => (t.id === ticketId ? { ...t, status: 'Completed', specialistNotes: notes } : t))
-    );
+    // 1. Send the review to PostgreSQL
+    const res = await authedFetch(`/api/consultations/${ticketId}/review`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        specialistNotes: notes, 
+        summary: "Specialist has completed the review of your palm lines.", 
+        rating: 5 
+      })
+    });
 
-    const remainingPending = tickets.filter((t) => t.id !== ticketId && t.status === 'Pending');
-    if (remainingPending.length > 0) {
-      setSelectedTicketId(remainingPending[0].id);
-    } else {
-      setSelectedTicketId(null);
+    if (!res.ok) {
+      throw new Error("Failed to save review to the database.");
     }
+
+    // 2. Update local UI state
+    setTickets((prev) => {
+      // FIX: Added `as 'Completed'` to strictly satisfy TypeScript
+      const updated = prev.map((t) => (t.id === ticketId ? { ...t, status: 'Completed' as 'Completed', specialistNotes: notes } : t));
+      
+      // Auto-select the next pending ticket in the queue
+      const remainingPending = updated.filter((t) => t.id !== ticketId && t.status === 'Pending');
+      if (remainingPending.length > 0) {
+        setSelectedTicketId(remainingPending[0].id);
+      } else {
+        setSelectedTicketId(null);
+      }
+      return updated;
+    });
   };
 
   const isAuthorized = !!user && AUTHORIZED_ROLES.includes(user.role);
 
   return (
-    <div className="relative min-h-screen">
-      <Starfield count={50} />
-      <main className="relative z-10 container mx-auto px-4 py-8 md:py-10">
-        {!isAuthorized ? (
-          <div className="max-w-2xl mx-auto py-12 px-4 text-center space-y-6">
-            <Card className="bg-card/60 backdrop-blur border-destructive/30 p-8 space-y-4 shadow-xl">
-              <div className="w-16 h-16 rounded-full bg-destructive/10 border border-destructive/30 flex items-center justify-center mx-auto text-destructive">
-                <ShieldAlert className="w-8 h-8" />
+    // 3. Removed the `relative min-h-screen` and `<Starfield />` background
+    <div className="relative z-10 w-full pb-20">
+      {!isAuthorized ? (
+        <div className="max-w-2xl mx-auto py-12 px-4 text-center space-y-6">
+          <Card className="bg-card/60 backdrop-blur border-destructive/30 p-8 space-y-4 shadow-xl">
+            <div className="w-16 h-16 rounded-full bg-destructive/10 border border-destructive/30 flex items-center justify-center mx-auto text-destructive">
+              <ShieldAlert className="w-8 h-8" />
+            </div>
+            <h2 className="font-display text-2xl font-bold text-foreground">Access Restricted</h2>
+            <p className="text-sm text-muted-foreground leading-relaxed max-w-md mx-auto">
+              The Palm Consultation Workspace is strictly reserved for authenticated{' '}
+              <span className="text-primary font-medium">Palm Reader Specialists</span>.
+            </p>
+            <div className="p-3 rounded-lg bg-secondary/40 text-xs text-muted-foreground">
+              Current role: <span className="font-semibold text-foreground">{user?.role || 'Guest'}</span>
+            </div>
+          </Card>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-border/50">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-primary-foreground shadow-lg shadow-primary/20">
+                <Hand className="w-5 h-5" />
               </div>
-              <h2 className="font-display text-2xl font-bold text-foreground">Access Restricted</h2>
-              <p className="text-sm text-muted-foreground leading-relaxed max-w-md mx-auto">
-                The Palm Consultation Workspace is strictly reserved for authenticated{' '}
-                <span className="text-primary font-medium">Palm Reader Specialists</span>.
-              </p>
-              <div className="p-3 rounded-lg bg-secondary/40 text-xs text-muted-foreground">
-                Current role: <span className="font-semibold text-foreground">{user?.role || 'Guest'}</span>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs uppercase tracking-widest text-primary font-semibold">
+                    Specialist Console
+                  </span>
+                  <span className="opacity-40">•</span>
+                  <span className="text-xs text-muted-foreground font-mono">{user?.name}</span>
+                </div>
+                <h1 className="font-display text-2xl md:text-3xl font-bold tracking-tight">
+                  Palm Consultation Workspace
+                </h1>
               </div>
-              <Button variant="outline" onClick={() => router.push('/')} className="mx-auto">
-                Back to Home
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchTickets}
+                disabled={loading}
+                className="border-border/60 text-xs"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+                Sync Queue
               </Button>
-            </Card>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-border/50">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center text-primary-foreground shadow-lg shadow-primary/20">
-                  <Hand className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs uppercase tracking-widest text-primary font-semibold">
-                      Specialist Console
-                    </span>
-                    <span className="opacity-40">•</span>
-                    <span className="text-xs text-muted-foreground font-mono">{user?.name}</span>
-                  </div>
-                  <h1 className="font-display text-2xl md:text-3xl font-bold tracking-tight">
-                    Palm Consultation Workspace
-                  </h1>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={fetchTickets}
-                  disabled={loading}
-                  className="border-border/60 text-xs"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-                  Sync Queue
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => router.push('/')} className="text-xs text-muted-foreground">
-                  <ArrowLeft className="w-3.5 h-3.5 mr-1" />
-                  Back
-                </Button>
-              </div>
-            </div>
-
-            <div className="grid lg:grid-cols-12 gap-6">
-              <div className="lg:col-span-4 h-full">
-                <ConsultationQueue
-                  tickets={tickets}
-                  selectedTicketId={selectedTicketId}
-                  onSelectTicket={handleSelectTicket}
-                  loading={loading}
-                  error={error}
-                  onRefresh={fetchTickets}
-                />
-              </div>
-
-              <div className="lg:col-span-8 space-y-6">
-                {selectedTicketId ? (
-                  (() => {
-                    const selectedTicket = tickets.find((t) => t.id === selectedTicketId);
-                    return selectedTicket ? (
-                      <AnimatePresence mode="wait">
-                        <motion.div
-                          key={selectedTicket.id}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -10 }}
-                          transition={{ duration: 0.25 }}
-                          className="space-y-6"
-                        >
-                          <PalmInspection ticket={selectedTicket} />
-                          <ConfidenceScores linesConfidence={selectedTicket.linesConfidence} />
-                          <GeminiSynthesis synthesis={selectedTicket.geminiSynthesis} />
-                          <SpecialistNotes ticket={selectedTicket} onCompleteReview={handleCompleteReview} />
-                        </motion.div>
-                      </AnimatePresence>
-                    ) : (
-                      <Card className="bg-card/60 backdrop-blur border-border/50 p-12 text-center text-muted-foreground flex flex-col items-center justify-center min-h-[450px]">
-                        <Hand className="w-12 h-12 mb-4 opacity-30 text-primary" />
-                        <h3 className="font-display text-lg font-semibold text-foreground mb-1">
-                          No Ticket Selected
-                        </h3>
-                        <p className="text-xs max-w-sm">
-                          Select a pending consultation ticket from the queue on the left to begin reviewing.
-                        </p>
-                      </Card>
-                    );
-                  })()
-                ) : (
-                  <Card className="bg-card/60 backdrop-blur border-border/50 p-12 text-center text-muted-foreground flex flex-col items-center justify-center min-h-[450px]">
-                    <Hand className="w-12 h-12 mb-4 opacity-30 text-primary" />
-                    <h3 className="font-display text-lg font-semibold text-foreground mb-1">
-                      No Ticket Selected
-                    </h3>
-                    <p className="text-xs max-w-sm">
-                      Select a pending consultation ticket from the queue on the left to begin reviewing.
-                    </p>
-                  </Card>
-                )}
-              </div>
             </div>
           </div>
-        )}
-      </main>
+
+          <div className="grid lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-4 h-full">
+              <ConsultationQueue
+                tickets={tickets}
+                selectedTicketId={selectedTicketId}
+                onSelectTicket={handleSelectTicket}
+                loading={loading}
+                error={error}
+                onRefresh={fetchTickets}
+              />
+            </div>
+
+            <div className="lg:col-span-8 space-y-6">
+              {selectedTicketId ? (
+                (() => {
+                  const selectedTicket = tickets.find((t) => t.id === selectedTicketId);
+                  return selectedTicket ? (
+                    <AnimatePresence mode="wait">
+                      <motion.div
+                        key={selectedTicket.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        transition={{ duration: 0.25 }}
+                        className="space-y-6"
+                      >
+                        <PalmInspection ticket={selectedTicket} />
+                        <ConfidenceScores linesConfidence={selectedTicket.linesConfidence} />
+                        <GeminiSynthesis synthesis={selectedTicket.geminiSynthesis} />
+                        <SpecialistNotes ticket={selectedTicket} onCompleteReview={handleCompleteReview} />
+                      </motion.div>
+                    </AnimatePresence>
+                  ) : (
+                    <Card className="bg-card/60 backdrop-blur border-border/50 p-12 text-center text-muted-foreground flex flex-col items-center justify-center min-h-[450px]">
+                      <Hand className="w-12 h-12 mb-4 opacity-30 text-primary" />
+                      <h3 className="font-display text-lg font-semibold text-foreground mb-1">
+                        No Ticket Selected
+                      </h3>
+                      <p className="text-xs max-w-sm">
+                        Select a pending consultation ticket from the queue on the left to begin reviewing.
+                      </p>
+                    </Card>
+                  );
+                })()
+              ) : (
+                <Card className="bg-card/60 backdrop-blur border-border/50 p-12 text-center text-muted-foreground flex flex-col items-center justify-center min-h-[450px]">
+                  <Hand className="w-12 h-12 mb-4 opacity-30 text-primary" />
+                  <h3 className="font-display text-lg font-semibold text-foreground mb-1">
+                    No Ticket Selected
+                  </h3>
+                  <p className="text-xs max-w-sm">
+                    Select a pending consultation ticket from the queue on the left to begin reviewing.
+                  </p>
+                </Card>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

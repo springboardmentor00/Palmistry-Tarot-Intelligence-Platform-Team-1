@@ -76,6 +76,8 @@ export function HistorySection() {
     data: PalmReadingRecord | TarotReadingRecord;
   } | null>(null);
 
+  const [requestingReview, setRequestingReview] = useState(false);
+
   const { toast } = useToast();
   const authedFetch = useAuthedFetch();
 
@@ -114,6 +116,44 @@ export function HistorySection() {
         description: e instanceof Error ? e.message : 'Unknown error',
         variant: 'destructive',
       });
+    }
+  };
+
+  const handleRequestReview = async () => {
+    if (!selectedReading) return;
+    setRequestingReview(true);
+    
+    try {
+      const specialistType = selectedReading.type === 'palm' ? 'palm_reader' : 'spiritual_consultant';
+      const question = selectedReading.type === 'tarot' 
+        ? (selectedReading.data as TarotReadingRecord).question 
+        : "Please review my AI analysis.";
+
+      const res = await authedFetch('/api/consultations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          readingId: selectedReading.data.id,
+          specialistType: specialistType,
+          clientQuestion: question,
+        }),
+      });
+
+      if (!res.ok) throw new Error('Failed to submit consultation request');
+      
+      toast({
+        title: 'Sent to Specialist!',
+        description: 'Your reading is in the review queue. Check the Consultations tab.',
+      });
+      setSelectedReading(null); // Close the modal
+    } catch (e: any) {
+      toast({
+        title: 'Request Failed',
+        description: e.message || 'Unknown error',
+        variant: 'destructive',
+      });
+    } finally {
+      setRequestingReview(false);
     }
   };
 
@@ -440,15 +480,15 @@ export function HistorySection() {
                   <Button
                     size="sm"
                     className="gap-1.5 text-xs w-full sm:w-auto"
-                    onClick={() => {
-                      toast({
-                        title: 'Consultation Dispatch',
-                        description: `Requesting specialist review for reading #${selectedReading.data.id.slice(0, 8)}...`,
-                      });
-                    }}
+                    onClick={handleRequestReview}
+                    disabled={requestingReview}
                   >
-                    <UserCheck className="w-3.5 h-3.5" />
-                    Request Specialist Review
+                    {requestingReview ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <UserCheck className="w-3.5 h-3.5" />
+                    )}
+                    {requestingReview ? 'Sending...' : 'Request Specialist Review'}
                   </Button>
                 </div>
               </div>

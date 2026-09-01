@@ -13,21 +13,33 @@ import {
   LogOut,
   LogIn,
   Loader2,
+  MessageSquare,
+  Wrench,
+  LayoutDashboard // Added icon for Dashboard
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Starfield } from '@/components/starfield';
 import { HomeSection } from '@/components/sections/home-section';
 import { PalmSection } from '@/components/sections/palm-section';
-import { TarotSection } from '@/components/sections/tarot-section';
 import { InsightsSection } from '@/components/sections/insights-section';
 import { HistorySection } from '@/components/sections/history-section';
 import { AuthScreen } from '@/components/auth/auth-screen';
 import { useAuth } from '@/components/auth/auth-provider';
 import { ProfileSection } from '@/components/sections/profile-section';
 
-// 1. Added 'profile' to your valid sections
-export type SectionId = 'home' | 'palm' | 'tarot' | 'insights' | 'history' | 'profile';
+// Specialist & Role Sections
+import { PalmConsultationSection } from '@/components/sections/palm-consultation-section';
+import { SpiritualGuideSection } from '@/components/sections/spiritual-guide-section';
+import { UserConsultationsSection } from '@/components/sections/user-consultations-section';
+import { TarotReaderSection } from '@/components/sections/tarot-reader-section';
+
+// New Integrations
+import { DashboardSection } from '@/components/sections/dashboard-section';
+import { TarotSection } from '@/components/sections/tarot-section'; // Added User Tarot
+import { Card } from '@/components/ui/card';
+
+export type SectionId = 'home' | 'palm' | 'tarot' | 'insights' | 'history' | 'profile' | 'consultations';
 
 interface NavItem {
   id: SectionId;
@@ -36,12 +48,12 @@ interface NavItem {
   requiresAuth?: boolean;
 }
 
-// Profile is intentionally left out of this array so it doesn't show in the main Nav
 const NAV_ITEMS: NavItem[] = [
-  { id: 'home', label: 'Home', icon: Sparkles },
+  { id: 'home', label: 'Home', icon: Sparkles }, // We will dynamically change this to Dashboard
   { id: 'palm', label: 'Palm Reading', icon: Hand, requiresAuth: true },
   { id: 'tarot', label: 'Tarot Reading', icon: Layers, requiresAuth: true },
   { id: 'insights', label: 'AI Insights', icon: Brain, requiresAuth: true },
+  { id: 'consultations', label: 'Consultations', icon: MessageSquare, requiresAuth: true },
   { id: 'history', label: 'History', icon: History, requiresAuth: true },
 ];
 
@@ -71,10 +83,8 @@ export default function Home() {
   };
 
   const handleNav = (id: SectionId) => {
-    // If the section requires auth and user isn't logged in, stay on home (auth screen will show)
     if (NAV_ITEMS.find((n) => n.id === id)?.requiresAuth && !user) {
-      // Show auth screen by switching to a virtual 'auth' state via the gating below
-      setSection(id); // Set the section; the render will fall back to AuthScreen
+      setSection(id);
       setMobileMenuOpen(false);
       return;
     }
@@ -87,7 +97,6 @@ export default function Home() {
     setSavedReadings([]);
   };
 
-  // Show global loading screen while auth state resolves
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center">
@@ -104,16 +113,29 @@ export default function Home() {
     );
   }
 
-  // Determine if current section requires auth and user is missing
   const currentNavItem = NAV_ITEMS.find((n) => n.id === section);
   const requiresAuth = currentNavItem?.requiresAuth ?? false;
   const showAuthScreen = requiresAuth && !user;
+
+  // Handles which Consultation Inbox/Workspace to show
+  const renderConsultationView = () => {
+    const role = user?.role?.toLowerCase() || 'user';
+    
+    if (role.includes('palm')) {
+      return <PalmConsultationSection />;
+    } else if (role.includes('tarot')) {
+      return <TarotReaderSection />;
+    } else if (role.includes('spiritual')) {
+      return <SpiritualGuideSection />;
+    } else {
+      return <UserConsultationsSection />;
+    }
+  };
 
   return (
     <div className="relative min-h-screen flex flex-col">
       <Starfield count={70} />
 
-      {/* Header / Navigation */}
       <header className="sticky top-0 z-40 backdrop-blur-xl bg-background/70 border-b border-border/50">
         <div className="container mx-auto px-4 py-3 flex items-center justify-between gap-4">
           <button
@@ -134,12 +156,16 @@ export default function Home() {
             </div>
           </button>
 
-          {/* Desktop nav */}
           <nav className="hidden lg:flex items-center gap-1">
             {NAV_ITEMS.map((item) => {
-              const Icon = item.icon;
+              // Dynamic Logic: If logged in, 'Home' becomes 'Dashboard'
+              const isHomeTab = item.id === 'home';
+              const displayLabel = isHomeTab && user ? 'Dashboard' : item.label;
+              const DisplayIcon = isHomeTab && user ? LayoutDashboard : item.icon;
+
               const active = section === item.id;
               const locked = item.requiresAuth && !user;
+              
               return (
                 <button
                   key={item.id}
@@ -160,8 +186,8 @@ export default function Home() {
                       transition={{ type: 'spring', stiffness: 380, damping: 30 }}
                     />
                   )}
-                  <Icon className="w-4 h-4 relative z-10" />
-                  <span className="relative z-10">{item.label}</span>
+                  <DisplayIcon className="w-4 h-4 relative z-10" />
+                  <span className="relative z-10">{displayLabel}</span>
                   {locked && (
                     <LockIcon className="w-3 h-3 relative z-10 opacity-60" />
                   )}
@@ -170,12 +196,10 @@ export default function Home() {
             })}
           </nav>
 
-          {/* Auth controls */}
           <div className="flex items-center gap-2">
             {user ? (
               <div className="flex items-center gap-2">
                 {user?.name && (
-                  // 2. Made this pill a clickable button that triggers navigate('profile')
                   <button 
                     onClick={() => navigate('profile')}
                     className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/60 border border-border/50 hover:bg-secondary/80 transition-colors cursor-pointer"
@@ -208,7 +232,6 @@ export default function Home() {
               </Button>
             )}
 
-            {/* Mobile menu trigger */}
             <Button
               variant="ghost"
               size="icon"
@@ -221,7 +244,6 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Mobile menu */}
         <AnimatePresence>
           {mobileMenuOpen && (
             <motion.nav
@@ -232,7 +254,6 @@ export default function Home() {
             >
               <div className="container mx-auto px-4 py-2 flex flex-col gap-1">
                 {user?.name && (
-                  // Also added the profile click to the mobile menu user pill
                   <button
                     onClick={() => navigate('profile')}
                     className="w-full text-left px-4 py-3 rounded-md flex items-center gap-3 bg-secondary/30 mb-2 border border-border/50"
@@ -244,9 +265,13 @@ export default function Home() {
                   </button>
                 )}
                 {NAV_ITEMS.map((item) => {
-                  const Icon = item.icon;
+                  const isHomeTab = item.id === 'home';
+                  const displayLabel = isHomeTab && user ? 'Dashboard' : item.label;
+                  const DisplayIcon = isHomeTab && user ? LayoutDashboard : item.icon;
+
                   const active = section === item.id;
                   const locked = item.requiresAuth && !user;
+                  
                   return (
                     <button
                       key={item.id}
@@ -258,8 +283,8 @@ export default function Home() {
                           : 'text-muted-foreground hover:bg-secondary/40'
                       )}
                     >
-                      <Icon className="w-4 h-4" />
-                      {item.label}
+                      <DisplayIcon className="w-4 h-4" />
+                      {displayLabel}
                       {locked && <LockIcon className="w-3 h-3 opacity-60 ml-auto" />}
                     </button>
                   );
@@ -284,7 +309,6 @@ export default function Home() {
         </AnimatePresence>
       </header>
 
-      {/* Main content */}
       <main className="relative z-10 flex-1 container mx-auto px-4 py-8 md:py-12">
         <AnimatePresence mode="wait">
           <motion.div
@@ -294,27 +318,29 @@ export default function Home() {
             exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 0.4, ease: 'easeOut' }}
           >
-            {/* 3. Added ProfileSection to the main render loop */}
             {showAuthScreen ? (
               <AuthScreen />
             ) : section === 'home' ? (
-              <HomeSection onNavigate={handleNav} savedCount={savedReadings.length} />
+              /* DYNAMIC LOGIC: Show Dashboard if logged in, otherwise show Home marketing page */
+              user ? <DashboardSection /> : <HomeSection onNavigate={handleNav} savedCount={savedReadings.length} />
             ) : section === 'palm' ? (
               <PalmSection onReadingComplete={addReading} />
             ) : section === 'tarot' ? (
-              <TarotSection onReadingComplete={addReading} />
+              /* Replaced the construction card with the actual Tarot user section */
+              <TarotSection />
             ) : section === 'insights' ? (
               <InsightsSection readings={savedReadings} />
             ) : section === 'history' ? (
               <HistorySection />
             ) : section === 'profile' ? (
               <ProfileSection />
+            ) : section === 'consultations' ? (
+              renderConsultationView()
             ) : null}
           </motion.div>
         </AnimatePresence>
       </main>
 
-      {/* Footer */}
       <footer className="relative z-10 mt-auto border-t border-border/50 bg-background/60 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-6 flex flex-col md:flex-row items-center justify-between gap-3 text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
