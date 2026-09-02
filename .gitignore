@@ -57,3 +57,10 @@ server.log
 # Ignore Python environments so Next.js doesn't crash
 mini-services/palmistry-ai/venv_ai/
 mini-services/palmistry-ai/__pycache__/
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

@@ -1153,7 +1153,7 @@ export function SpiritualGuideSection() {
                             <linearGradient id="gGrowth" x1="0" y1="0" x2="0" y2="1">
                               <stop offset="0%" stopColor="#d4af37" stopOpacity={0.5} />
                               <stop offset="100%" stopColor="#d4af37" stopOpacity={0} />
-                            </linear, 
+                            </linearGradient> 
                             <linearGradient id="gCareer" x1="0" y1="0" x2="0" y2="1">
                               <stop offset="0%" stopColor="#a855f7" stopOpacity={0.4} />
                               <stop offset="100%" stopColor="#a855f7" stopOpacity={0} />

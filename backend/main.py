@@ -8,6 +8,7 @@ from routers import profile
 from routers import readings
 from routers import insights
 from routers import consultations
+from routers import dashboard
 
 app = FastAPI(title="Palmistry & Tarot API Gateway")
 
@@ -44,3 +45,5 @@ app.include_router(readings.router)
 app.include_router(insights.router)
 
 app.include_router(consultations.router)
+
+app.include_router(dashboard.router)
