@@ -1,0 +1,135 @@
+generator client {
+  provider             = "prisma-client-py"
+  interface            = "asyncio"
+  recursive_type_depth = 5
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 1. Core Relational Data
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         String   @default("User") // Roles: user, palm_reader, tarot_reader, spiritual_consultant, admin
+  createdAt    DateTime @default(now())
+
+  // Relations
+  profile                 Profile?
+  preferences             Preference?
+  readings                Reading[]
+  notifications           Notification[]
+  activityLogs            ActivityLog[]
+  reports                 Report[]
+  clientConsultations     Consultation[] @relation("ClientConsultations")
+  specialistConsultations Consultation[] @relation("SpecialistConsultations")
+}
+
+model Profile {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  birthDate          DateTime?
+  zodiacSign         String?
+  relationshipStatus String?
+  primaryGoal        String?
+  bio                String?
+  avatarUrl          String?
+  
+  // NEW FIELDS FOR UI
+  ageGroup           String?
+  spiritualInterests String[] 
+  secondaryGoals     String[]
+  guidanceAreas      String[]
+  preferredTopics    String[]
+
+  updatedAt          DateTime @updatedAt
+}
+
+model Preference {
+  id                          String   @id @default(uuid())
+  userId                      String   @unique
+  user                        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailAlerts                 Boolean  @default(true)
+  readingDepth                String   @default("standard") // standard, deep
+  uiTheme                     String   @default("dark")
+
+  // NEW FIELDS FOR UI
+  readingStyle                String   @default("short")
+  dailyGuidance               Boolean  @default(true)
+  readingReminders            Boolean  @default(true)
+  insightUpdates              Boolean  @default(true)
+  personalizedRecommendations Boolean  @default(true)
+  saveReadingHistory          Boolean  @default(true)
+
+  updatedAt                   DateTime @updatedAt
+}
+
+// 2. Document Store & Vector Domain
+model Reading {
+  id                   String   @id @default(uuid())
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readingType          String   // 'palm' or 'tarot'
+  summary              String   // High-level text summary
+  personalitySynthesis String?  // Deep AI output
+  rawData              Json     // The JSONB document: CV points, Tarot spreads, etc.
+  vectorEmbedding      Json?    // AI similarity data (FAISS equivalent)
+  imageUrl             String?
+  isHidden             Boolean  @default(false)
+  createdAt            DateTime @default(now())
+
+  consultations        Consultation[]
+}
+
+// 3. Consultation Bridge
+model Consultation {
+  id              String   @id @default(uuid())
+  clientId        String
+  client          User     @relation("ClientConsultations", fields: [clientId], references: [id], onDelete: Cascade)
+  specialistId    String?
+  specialist      User?    @relation("SpecialistConsultations", fields: [specialistId], references: [id], onDelete: SetNull)
+  readingId       String
+  reading         Reading  @relation(fields: [readingId], references: [id], onDelete: Cascade)
+  specialistType  String   // palm_reader, tarot_reader, spiritual_consultant
+  status          String   @default("pending") // pending, in_review, completed
+  clientQuestion  String?
+  specialistNotes String?
+  createdAt       DateTime @default(now())
+  reviewedAt      DateTime?
+}
+
+// 4. Notifications & Logs (Time Series Equivalence)
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  type      String   // consultation_update, system, reminder
+  createdAt DateTime @default(now())
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String   // e.g., "tarot_drawn", "palm_scanned", "profile_updated"
+  metadata  Json?    // Extra contextual data for Analytics
+  createdAt DateTime @default(now())
+}
+
+// 5. Media & Reports
+model Report {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  fileUrl   String   // Link to PDF/JSON in local storage
+  createdAt DateTime @default(now())
+}
