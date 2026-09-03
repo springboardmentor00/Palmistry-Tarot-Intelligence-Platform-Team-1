@@ -77,9 +77,11 @@ export function DashboardSection() {
 
     const fetchDashboard = async () => {
       try {
-        const currentToken = token || localStorage.getItem('token');
+        const currentToken = token || localStorage.getItem('mystica_token');
         const headers: HeadersInit = {};
         if (currentToken) headers['Authorization'] = `Bearer ${currentToken}`;
+
+        console.log("Headers sending:", headers);
 
         const response = await fetch('/api/dashboard', { headers });
         

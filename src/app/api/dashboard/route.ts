@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generativeai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // Initialize Gemini SDK (Ensure GEMINI_API_KEY is in your .env.local)
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
