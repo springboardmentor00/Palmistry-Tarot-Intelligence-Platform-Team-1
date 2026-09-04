@@ -15,7 +15,7 @@ model User {
   email        String   @unique
   name         String
   passwordHash String
-  role         String   @default("User") // Roles: user, palm_reader, tarot_reader, spiritual_consultant, admin
+  role         String   @default("User") // Roles: user, palm_reader, tarot_reader, spiritual_consultant, palm_consultant
   createdAt    DateTime @default(now())
 
   // Relations
@@ -74,7 +74,7 @@ model Reading {
   id                   String   @id @default(uuid())
   userId               String
   user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  readingType          String   // 'palm' or 'tarot'
+readingType          String   // 'palm', 'tarot', or 'insight'
   summary              String   // High-level text summary
   personalitySynthesis String?  // Deep AI output
   rawData              Json     // The JSONB document: CV points, Tarot spreads, etc.

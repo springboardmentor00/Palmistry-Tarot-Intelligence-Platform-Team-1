@@ -86,7 +86,7 @@ interface SpecialistNotesProps {
 }
 
 // Added backend roles to match your Prisma schema
-const AUTHORIZED_ROLES = ['palm_reader', 'admin', 'Palm Reader', 'Palm Reader Specialist', 'PalmReader', 'Administrator'];
+const AUTHORIZED_ROLES = ['palm_reader', 'admin', 'Palm Reader', 'Palm Reader Specialist', 'PalmReader', 'Administrator', 'Palm Consultant'];
 
 const INITIAL_TICKETS: PalmConsultationTicket[] = [
   {

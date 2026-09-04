@@ -62,7 +62,27 @@ export async function POST(req: NextRequest) {
     const result = await model.generateContent(prompt);
     const answer = result.response.text();
 
-    // 5. Return to UI
+    // 5. Save the insight to the database as a new reading
+    try {
+      await fetch(`${BACKEND_URL}/api/readings/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': authHeader
+        },
+        body: JSON.stringify({
+          readingType: "insight",
+          summary: "Weekly Holistic Insight",
+          personalitySynthesis: answer,
+          rawData: { question: question } // Save what they asked!
+        })
+      });
+    } catch (dbError) {
+      console.error("Failed to save insight to history:", dbError);
+      // We don't throw here; we still want to return the answer to the user even if save fails.
+    }
+
+    // 6. Return to UI
     return NextResponse.json({ answer: answer });
 
   } catch (error: any) {

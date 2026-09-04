@@ -87,26 +87,19 @@ export function InsightsSection({ readings }: InsightsSectionProps) {
         </p>
       </header>
 
-      {/* Source Readings Context (Visual Only) */}
-      <Card className="bg-card/60 backdrop-blur border-border/50 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-display text-xl font-semibold flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-primary" />
-            Recent Memory
-          </h2>
-          <span className="text-sm text-muted-foreground">
-            {readings.length} reading{readings.length !== 1 ? 's' : ''} this session
-          </span>
-        </div>
-
-        {readings.length === 0 ? (
-          <div className="text-center py-6 text-muted-foreground">
-            <Inbox className="w-8 h-8 mx-auto mb-2 opacity-40" />
-            <p className="text-sm">
-              The guide has no readings from this session, but will pull from your past 7 days of history if available.
-            </p>
+      {/* Source Readings Context (Visual Only) - Hides if empty */}
+      {readings.length > 0 && (
+        <Card className="bg-card/60 backdrop-blur border-border/50 p-6 mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-display text-xl font-semibold flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-primary" />
+              Recent Session Memory
+            </h2>
+            <span className="text-sm text-muted-foreground">
+              {readings.length} reading{readings.length !== 1 ? 's' : ''} right now
+            </span>
           </div>
-        ) : (
+
           <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
             {readings.map((r, i) => (
               <div
@@ -129,8 +122,8 @@ export function InsightsSection({ readings }: InsightsSectionProps) {
               </div>
             ))}
           </div>
-        )}
-      </Card>
+        </Card>
+      )}
 
       {/* Chat Input */}
       <form onSubmit={askGuide} className="relative">

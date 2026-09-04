@@ -4,7 +4,7 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8000';
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: any // Use any here to avoid Next.js version-specific TS errors
 ) {
   try {
     const authHeader = req.headers.get('authorization');
@@ -12,7 +12,11 @@ export async function PATCH(
 
     const body = await req.json();
 
-    const res = await fetch(`${BACKEND_URL}/api/consultations/${params.id}/review`, {
+    // The Fix: Await the params Promise (Next.js 15+ requirement)
+    const params = await context.params;
+    const consultationId = params.id;
+
+    const res = await fetch(`${BACKEND_URL}/api/consultations/${consultationId}/review`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -28,4 +32,4 @@ export async function PATCH(
     console.error('Consultation Review Proxy PATCH Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-}
+} 

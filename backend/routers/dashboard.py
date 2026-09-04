@@ -103,6 +103,8 @@ async def get_real_dashboard_data(current_user=Depends(get_current_user)):
     if role == "spiritual_guide":
         role = "spiritual_consultant"
 
+    print(f"==== DEBUG: RAW ROLE: '{raw_role}' | NORMALIZED ROLE: '{role}' ====")
+
     today_str = date.today().isoformat()
     daily_seed = f"{user_id}-{today_str}"
     daily_scores = get_deterministic_scores(daily_seed)
@@ -161,7 +163,12 @@ async def get_real_dashboard_data(current_user=Depends(get_current_user)):
     # ==========================================
     # SPECIALIST: Real PostgreSQL Calculations
     # ==========================================
-    elif role in ["palm_reader", "tarot_reader", "spiritual_consultant"]:
+    elif role in [
+        "palm_reader",
+        "tarot_reader",
+        "spiritual_consultant",
+        "palm_consultant",
+    ]:
         completed_consults = await db.consultation.find_many(
             where={"specialistId": user_id, "status": "completed"},
             include={"client": True},

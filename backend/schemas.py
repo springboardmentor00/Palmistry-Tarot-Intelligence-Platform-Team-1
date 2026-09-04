@@ -29,3 +29,4 @@ class ReadingCreate(BaseModel):
     summary: str
     personalitySynthesis: Optional[str] = None
     rawData: Dict[str, Any]
+    imageUrl: Optional[str] = None  # <-- ADD THIS LINE

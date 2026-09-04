@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
 
     const palmReadings: any[] = [];
     const tarotReadings: any[] = [];
+    const insights: any[] = [];
 
     for (const r of readings) {
       let raw: any = {};
@@ -55,6 +56,15 @@ export async function GET(req: NextRequest) {
           summary: r.summary,
           createdAt: r.createdAt,
         });
+      } else if (r.readingType === 'insight') {
+        insights.push({
+          id: r.id,
+          type: 'insight',
+          question: raw.question || null,
+          summary: r.summary,
+          interpretation: r.personalitySynthesis || r.summary,
+          createdAt: r.createdAt, // Changed from 'date' so the frontend calendar formats it correctly
+        });
       }
     }
 
@@ -62,7 +72,7 @@ export async function GET(req: NextRequest) {
       user: { id: 'current', name: 'Seeker' },
       palmReadings,
       tarotReadings,
-      insights: [],
+      insights: insights,
     });
   } catch (error: any) {
     console.error('History Fetch Error:', error);

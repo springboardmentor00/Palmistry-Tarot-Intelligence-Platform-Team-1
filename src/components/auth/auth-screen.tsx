@@ -185,7 +185,7 @@ export function AuthScreen() {
                         <SelectItem value="User">User</SelectItem>
                         <SelectItem value="Tarot Reader">Tarot Reader</SelectItem>
                         <SelectItem value="Spiritual Consultant">Spiritual Consultant</SelectItem>
-                        <SelectItem value="Administrator">Administrator</SelectItem>
+                        <SelectItem value="Palm Consultant">Palm Consultant</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
