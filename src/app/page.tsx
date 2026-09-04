@@ -327,7 +327,7 @@ export default function Home() {
               <PalmSection onReadingComplete={addReading} />
             ) : section === 'tarot' ? (
               /* Replaced the construction card with the actual Tarot user section */
-              <TarotSection />
+              <TarotSection onReadingComplete={addReading} />
             ) : section === 'insights' ? (
               <InsightsSection readings={savedReadings} />
             ) : section === 'history' ? (

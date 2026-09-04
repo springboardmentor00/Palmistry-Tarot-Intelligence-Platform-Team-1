@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
     3. Use their past reading results and profile as internal background memory to make your response personally relevant, but do not recite the readings back to them word-for-word.
     4. Keep the response natural, conversational, intuitive, and concise (1-2 direct paragraphs).`;
 
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.6-flash' });
     const result = await model.generateContent(prompt);
     const answer = result.response.text();
 
