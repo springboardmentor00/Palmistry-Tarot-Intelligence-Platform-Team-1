@@ -135,6 +135,7 @@ Keep it under 150 words. Do not list the confidence percentages, just interpret 
             readingType: 'palm',
             summary: summary,
             personalitySynthesis: personality,
+            imageUrl: image,
             rawData: {
               handType: hand,
               lines: lines

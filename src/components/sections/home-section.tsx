@@ -128,7 +128,7 @@ export function HomeSection({ onNavigate, savedCount }: HomeSectionProps) {
             {user ? (
               <Button
                 size="lg"
-                onClick={() => onNavigate('palm')}
+                onClick={() => onNavigate('auth')}
                 className="bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-90 transition-opacity px-8 h-12 text-base"
               >
                 <Hand className="w-4 h-4 mr-2" />
@@ -137,7 +137,7 @@ export function HomeSection({ onNavigate, savedCount }: HomeSectionProps) {
             ) : (
               <Button
                 size="lg"
-                onClick={() => onNavigate('palm')}
+                onClick={() => onNavigate('palm')} // <-- FIXED
                 className="bg-gradient-to-r from-primary to-accent text-primary-foreground hover:opacity-90 transition-opacity px-8 h-12 text-base"
               >
                 <LogIn className="w-4 h-4 mr-2" />
@@ -147,7 +147,7 @@ export function HomeSection({ onNavigate, savedCount }: HomeSectionProps) {
             <Button
               size="lg"
               variant="outline"
-              onClick={() => onNavigate('tarot')}
+              onClick={() => onNavigate(user ? 'tarot' : 'auth')} // <-- FIXED
               className="border-primary/40 hover:bg-secondary/40 h-12 px-8 text-base"
             >
               <Layers className="w-4 h-4 mr-2" />
@@ -223,7 +223,7 @@ export function HomeSection({ onNavigate, savedCount }: HomeSectionProps) {
                   className={cn(
                     'relative overflow-hidden h-full p-6 bg-card/60 backdrop-blur border-border/50 hover:border-primary/40 transition-all group cursor-pointer'
                   )}
-                  onClick={() => onNavigate(f.target)}
+                  onClick={() => onNavigate(user ? f.target : 'auth')}
                 >
                   <div
                     className={cn(
@@ -286,7 +286,7 @@ export function HomeSection({ onNavigate, savedCount }: HomeSectionProps) {
               ) : (
                 <Button
                   variant="outline"
-                  onClick={() => onNavigate('palm')}
+                  onClick={() => onNavigate('auth')}
                   className="border-primary/40 hover:bg-secondary/40"
                 >
                   <LogIn className="w-4 h-4 mr-2" />
@@ -325,7 +325,7 @@ export function HomeSection({ onNavigate, savedCount }: HomeSectionProps) {
         <Button
           size="lg"
           variant="ghost"
-          onClick={() => onNavigate(user ? 'palm' : 'palm')}
+          onClick={() => onNavigate(user ? 'palm' : 'auth')} // <-- FIXED
           className="text-primary hover:text-primary hover:bg-primary/10"
         >
           {user ? 'Begin Your Reading' : 'Sign In to Begin'}

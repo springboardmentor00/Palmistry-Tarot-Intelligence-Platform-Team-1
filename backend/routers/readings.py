@@ -39,45 +39,40 @@ async def get_history(user_id: str = Depends(get_user_id)):
         # Safely parse the rawData JSONB field
         raw = r.rawData if isinstance(r.rawData, dict) else json.loads(r.rawData)
 
-        # --- ALL INSIGHTS (No 7-Day Limit) ---
-        insights.append(
-            {
-                "id": r.id,
-                "type": r.readingType,
-                "summary": r.summary,
-                "date": r.createdAt.isoformat(),
-            }
-        )
-
         # --- PALMISTRY DATA ---
         if r.readingType == "palm":
-            palm_readings.append(
-                {
-                    "id": r.id,
-                    "handType": raw.get("handType", "Unknown"),
-                    "summary": r.summary,
-                    "personalitySynthesis": r.personalitySynthesis
-                    or "No interpretation available.",
-                    "lines": raw.get("lines", {}),
-                    "imageUrl": r.imageUrl,  # <--- Image safely attached!
-                    "createdAt": r.createdAt.isoformat(),
-                }
-            )
+            palm_readings.append({
+                "id": r.id,
+                "handType": raw.get("handType", "Unknown"),
+                "summary": r.summary,
+                "personalitySynthesis": r.personalitySynthesis or "No interpretation available.",
+                "lines": raw.get("lines", {}),
+                "imageUrl": r.imageUrl,
+                "createdAt": r.createdAt.isoformat(),
+            })
 
         # --- TAROT DATA ---
         elif r.readingType == "tarot":
-            tarot_readings.append(
-                {
-                    "id": r.id,
-                    "spreadType": raw.get("spreadName", "Tarot Reading"),
-                    "question": raw.get("question", None),
-                    "draw": raw.get("draw", []),
-                    "interpretation": r.personalitySynthesis
-                    or "No interpretation available.",
-                    "summary": r.summary,
-                    "createdAt": r.createdAt.isoformat(),
-                }
-            )
+            tarot_readings.append({
+                "id": r.id,
+                "spreadType": raw.get("spreadName", "Tarot Reading"),
+                "question": raw.get("question", None),
+                "draw": raw.get("draw", []),
+                "interpretation": r.personalitySynthesis or "No interpretation available.",
+                "summary": r.summary,
+                "createdAt": r.createdAt.isoformat(),
+            })
+            
+        # --- INSIGHTS DATA ---
+        elif r.readingType == "insight":
+            insights.append({
+                "id": r.id,
+                "type": "insight",
+                "question": raw.get("question", None), # <--- Add this line so the UI gets the Q!
+                "summary": r.summary,
+                "interpretation": r.personalitySynthesis or r.summary,
+                "createdAt": r.createdAt.isoformat(),
+            })
 
     return {
         "user": {"id": user_id, "name": "Seeker"},

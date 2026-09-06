@@ -417,6 +417,8 @@ export function HistorySection() {
                 <div className="flex items-center gap-2 mb-1">
                   {selectedReading.type === 'tarot' ? (
                     <Badge className="bg-violet-500/20 text-violet-300 border-violet-500/30">Tarot Reading</Badge>
+                  ) : selectedReading.type === 'insight' ? (
+                    <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30">Spiritual Insight</Badge>
                   ) : (
                     <Badge className="bg-rose-500/20 text-rose-300 border-rose-500/30">Palmistry Analysis</Badge>
                   )}
@@ -495,12 +497,12 @@ export function HistorySection() {
                 {selectedReading.type === 'palm' && (
                   <div className="flex flex-col md:flex-row gap-6">
                     {/* LEFT COLUMN: PALM PHOTO */}
-                    <div className="w-full md:w-1/3 aspect-[3/4] bg-secondary/30 rounded-xl overflow-hidden border border-border/50 flex flex-col items-center justify-center shrink-0 shadow-inner relative">
+                    <div className="w-full md:w-1/3 aspect-[4/3] bg-secondary/30 rounded-xl overflow-hidden border border-border/50 flex flex-col items-center justify-center shrink-0 shadow-inner relative">
                       {(selectedReading.data as PalmReadingRecord).imageUrl ? (
                         <img
                           src={(selectedReading.data as PalmReadingRecord).imageUrl!}
                           alt="Palm Scan"
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-contain"
                         />
                       ) : (
                         <div className="flex flex-col items-center gap-3 text-muted-foreground p-6 text-center">

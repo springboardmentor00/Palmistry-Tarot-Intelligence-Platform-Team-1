@@ -14,6 +14,7 @@ export interface AuthUser {
   name: string;
   email: string;
   role: string;
+  isInitiated?: boolean; // <-- NEW: Tracks if they finished onboarding
 }
 
 interface AuthContextValue {
@@ -29,6 +30,22 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 const TOKEN_STORAGE_KEY = 'mystica_token';
 
+// <-- NEW: Helper function to silently check profile completion
+async function checkProfileInitiation(token: string): Promise<boolean> {
+  try {
+    const res = await fetch('/api/profile', {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return !!(data.primaryLifeGoal && data.primaryLifeGoal.trim() !== '');
+    }
+  } catch (error) {
+    console.error('Failed to check profile completion status', error);
+  }
+  return false;
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,13 +58,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           : null;
       const headers: Record<string, string> = {};
       if (token) headers['Authorization'] = `Bearer ${token}`;
+      
       const res = await fetch('/api/auth/me', { headers });
       if (!res.ok) {
         setUser(null);
         return;
       }
+      
       const data = await res.json();
-      setUser(data.user ?? null);
+      const fetchedUser = data.user;
+      
+      // <-- NEW: Check profile status seamlessly in the background
+      if (token && fetchedUser) {
+        fetchedUser.isInitiated = await checkProfileInitiation(token);
+      }
+      
+      setUser(fetchedUser ?? null);
     } catch {
       setUser(null);
     }
@@ -66,7 +92,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (email: string, password: string) => {
-      // FastAPI strictly expects x-www-form-urlencoded and 'username'
       const formData = new URLSearchParams();
       formData.append('username', email);
       formData.append('password', password);
@@ -84,6 +109,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       if (typeof window !== 'undefined' && data.access_token) {
         localStorage.setItem(TOKEN_STORAGE_KEY, data.access_token);
+        // <-- NEW: Check profile status on fresh login
+        data.user.isInitiated = await checkProfileInitiation(data.access_token);
       }
       setUser(data.user);
     },
@@ -103,9 +130,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(data.detail || 'Registration failed');
       }
 
-      // Use the consistent storage key
       if (typeof window !== 'undefined' && data.access_token) {
         localStorage.setItem(TOKEN_STORAGE_KEY, data.access_token);
+        // <-- NEW: Brand new users are guaranteed to not be initiated
+        data.user.isInitiated = false; 
       }
       setUser(data.user);
     },
@@ -113,7 +141,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(async () => {
-    // JWT is stateless, so we just destroy it locally
     if (typeof window !== 'undefined') {
       localStorage.removeItem(TOKEN_STORAGE_KEY);
     }
@@ -139,7 +166,6 @@ export function useAuth(): AuthContextValue {
   return ctx;
 }
 
-/** Helper for authenticated fetch — auto-attaches Bearer token */
 export function useAuthedFetch() {
   const { user } = useAuth();
   return useCallback(

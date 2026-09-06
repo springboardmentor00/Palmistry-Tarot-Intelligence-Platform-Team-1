@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles,
@@ -15,7 +15,7 @@ import {
   Loader2,
   MessageSquare,
   Wrench,
-  LayoutDashboard // Added icon for Dashboard
+  LayoutDashboard
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -25,8 +25,9 @@ import { PalmSection } from '@/components/sections/palm-section';
 import { InsightsSection } from '@/components/sections/insights-section';
 import { HistorySection } from '@/components/sections/history-section';
 import { AuthScreen } from '@/components/auth/auth-screen';
-import { useAuth } from '@/components/auth/auth-provider';
+import { useAuth, useAuthedFetch } from '@/components/auth/auth-provider';
 import { ProfileSection } from '@/components/sections/profile-section';
+import { OnboardingSection } from '@/components/sections/onboarding-section';
 
 // Specialist & Role Sections
 import { PalmConsultationSection } from '@/components/sections/palm-consultation-section';
@@ -36,10 +37,11 @@ import { TarotReaderSection } from '@/components/sections/tarot-reader-section';
 
 // New Integrations
 import { DashboardSection } from '@/components/sections/dashboard-section';
-import { TarotSection } from '@/components/sections/tarot-section'; // Added User Tarot
+import { TarotSection } from '@/components/sections/tarot-section'; 
 import { Card } from '@/components/ui/card';
 
-export type SectionId = 'home' | 'palm' | 'tarot' | 'insights' | 'history' | 'profile' | 'consultations';
+// ADDED 'auth' TO THE END OF SECTION ID
+export type SectionId = 'home' | 'palm' | 'tarot' | 'insights' | 'history' | 'profile' | 'consultations' | 'onboarding' | 'auth';
 
 interface NavItem {
   id: SectionId;
@@ -49,7 +51,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'home', label: 'Home', icon: Sparkles }, // We will dynamically change this to Dashboard
+  { id: 'home', label: 'Home', icon: Sparkles }, 
   { id: 'palm', label: 'Palm Reading', icon: Hand, requiresAuth: true },
   { id: 'tarot', label: 'Tarot Reading', icon: Layers, requiresAuth: true },
   { id: 'insights', label: 'AI Insights', icon: Brain, requiresAuth: true },
@@ -64,7 +66,18 @@ export default function Home() {
     { type: 'palm' | 'tarot'; summary: string; content: string }[]
   >([]);
 
-  const { user, loading, logout } = useAuth();
+  const { user, loading, logout, refresh } = useAuth();
+  const authedFetch = useAuthedFetch();
+
+  // --- NEW: Drop them on the dashboard after a generic login ---
+  useEffect(() => {
+    if (user && section === 'auth') {
+      setSection('home');
+    }
+  }, [user, section]);
+
+  // --- THE SILENT ONBOARDING GUARD ---
+  const effectiveSection = (user && user.isInitiated === false) ? 'onboarding' : section;
 
   const navigate = (id: SectionId) => {
     setSection(id);
@@ -113,9 +126,12 @@ export default function Home() {
     );
   }
 
-  const currentNavItem = NAV_ITEMS.find((n) => n.id === section);
+  // USE EFFECTIVESECTION INSTEAD OF RAW SECTION
+  const currentNavItem = NAV_ITEMS.find((n) => n.id === effectiveSection);
   const requiresAuth = currentNavItem?.requiresAuth ?? false;
-  const showAuthScreen = requiresAuth && !user;
+  
+  // --- UPDATED: Show Auth Screen if locked route OR if section is exactly 'auth' ---
+  const showAuthScreen = !user && (requiresAuth || effectiveSection === 'auth');
 
   // Handles which Consultation Inbox/Workspace to show
   const renderConsultationView = () => {
@@ -158,7 +174,6 @@ export default function Home() {
 
           <nav className="hidden lg:flex items-center gap-1">
             {NAV_ITEMS.map((item) => {
-              // Dynamic Logic: If logged in, 'Home' becomes 'Dashboard'
               const isHomeTab = item.id === 'home';
               const displayLabel = isHomeTab && user ? 'Dashboard' : item.label;
               const DisplayIcon = isHomeTab && user ? LayoutDashboard : item.icon;
@@ -224,7 +239,7 @@ export default function Home() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setSection('palm')}
+                onClick={() => setSection('auth')} // <--- CHANGED FROM 'palm'
                 className="border-primary/40 hover:bg-primary/10 hidden lg:flex"
               >
                 <LogIn className="w-3.5 h-3.5 mr-1.5" />
@@ -294,7 +309,7 @@ export default function Home() {
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      setSection('palm');
+                      setSection('auth'); // <--- CHANGED FROM 'palm'
                       setMobileMenuOpen(false);
                     }}
                     className="mt-2 border-primary/40"
@@ -312,7 +327,7 @@ export default function Home() {
       <main className="relative z-10 flex-1 container mx-auto px-4 py-8 md:py-12">
         <AnimatePresence mode="wait">
           <motion.div
-            key={showAuthScreen ? 'auth' : section}
+            key={showAuthScreen ? 'auth' : effectiveSection}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -20 }}
@@ -320,21 +335,24 @@ export default function Home() {
           >
             {showAuthScreen ? (
               <AuthScreen />
-            ) : section === 'home' ? (
-              /* DYNAMIC LOGIC: Show Dashboard if logged in, otherwise show Home marketing page */
+            ) : effectiveSection === 'onboarding' ? ( 
+              <OnboardingSection onComplete={async () => {
+                await refresh();
+                setSection('home');
+              }} />
+            ) : effectiveSection === 'home' ? (
               user ? <DashboardSection /> : <HomeSection onNavigate={handleNav} savedCount={savedReadings.length} />
-            ) : section === 'palm' ? (
+            ) : effectiveSection === 'palm' ? (
               <PalmSection onReadingComplete={addReading} />
-            ) : section === 'tarot' ? (
-              /* Replaced the construction card with the actual Tarot user section */
+            ) : effectiveSection === 'tarot' ? (
               <TarotSection onReadingComplete={addReading} />
-            ) : section === 'insights' ? (
+            ) : effectiveSection === 'insights' ? (
               <InsightsSection readings={savedReadings} />
-            ) : section === 'history' ? (
+            ) : effectiveSection === 'history' ? (
               <HistorySection />
-            ) : section === 'profile' ? (
+            ) : effectiveSection === 'profile' ? (
               <ProfileSection />
-            ) : section === 'consultations' ? (
+            ) : effectiveSection === 'consultations' ? (
               renderConsultationView()
             ) : null}
           </motion.div>

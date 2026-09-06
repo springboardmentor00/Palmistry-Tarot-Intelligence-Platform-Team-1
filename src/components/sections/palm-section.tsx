@@ -43,6 +43,7 @@ interface PalmSectionProps {
     type: 'palm';
     summary: string;
     content: string;
+    imageUrl?: string | null; // <--- ADD THIS
   }) => void;
 }
 
@@ -352,6 +353,7 @@ export function PalmSection({ onReadingComplete }: PalmSectionProps) {
         type: 'palm',
         summary: data.summary,
         content: data.rawAnalysis ?? data.summary,
+        imageUrl: image, // <--- ADD THIS LINE
       });
       toast({
         title: 'Reading complete',
