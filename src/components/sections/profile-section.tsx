@@ -170,8 +170,10 @@ export function ProfileSection() {
     }
   };
 
-  const handleCancel = () => {
-    setProfile(savedProfile);
+  const handleCancel = (e: React.MouseEvent) => {
+    e.preventDefault(); // Prevents any accidental form submissions
+    // Deep copy ensures all arrays reset properly
+    setProfile(JSON.parse(JSON.stringify(savedProfile)));
     setErrors({});
     setIsSaved(false);
   };

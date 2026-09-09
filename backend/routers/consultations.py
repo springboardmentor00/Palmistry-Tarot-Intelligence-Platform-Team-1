@@ -84,6 +84,47 @@ async def get_consultations(user=Depends(get_current_user)):
     return tickets
 
 
+# ==========================================
+# BULLETPROOF ENDPOINT: SPECIALIST STATS 
+# ==========================================
+@router.get("/stats")
+async def get_consultation_stats(user=Depends(get_current_user)):
+    role = user.role.lower()
+
+    if "palm" in role:
+        specialist_type = "palm_reader"
+    elif "tarot" in role:
+        specialist_type = "tarot_reader"
+    else:
+        specialist_type = "spiritual_consultant"
+
+    # 1. Pending count for the queue
+    pending_count = await db.consultation.count(
+        where={
+            "specialistType": specialist_type,
+            "status": "Pending"
+        }
+    )
+    
+    # 2. THE FIX: Explicitly INCLUDE the specialistConsultations array!
+    user_data = await db.user.find_unique(
+        where={"id": user.id},
+        include={"specialistConsultations": True}  # <-- THIS WAS MISSING
+    )
+    
+    # Now the array is actually loaded from the database
+    consultations_list = getattr(user_data, "specialistConsultations", [])
+    completed_count = len(consultations_list) if consultations_list else 0
+
+    return {
+        "pending": pending_count,
+        "completedAllTime": completed_count
+    }
+
+
+# ==========================================
+# FIXED ENDPOINT: REVIEW CONSULTATION
+# ==========================================
 @router.patch("/{consultation_id}/review")
 async def review_consultation(
     consultation_id: str, data: ConsultationReview, user=Depends(get_current_user)
@@ -92,19 +133,26 @@ async def review_consultation(
     if role == "user":
         raise HTTPException(status_code=403, detail="Users cannot review tickets")
 
-    # We store the combined notes, summary, and rating as a JSON string inside the specialistNotes field
-    notes_dict = {
-        "notes": data.specialistNotes,
-        "summary": data.summary,
-        "rating": data.rating,
-    }
-
+    # BUG 2 FIX: We removed json.dumps(). It now saves the beautifully formatted string directly!
     updated = await db.consultation.update(
         where={"id": consultation_id},
         data={
             "status": "Completed",
             "specialistId": user.id,
-            "specialistNotes": json.dumps(notes_dict),
+            "specialistNotes": data.specialistNotes, 
         },
     )
+
+    # 👇 --- NEW: AUTOMATIC NOTIFICATION TRIGGER --- 👇
+    await db.notification.create(
+        data={
+            "userId": updated.clientId,
+            "title": "Consultation Ready",
+            "message": f"Your specialist has completed your reading. Check your vault to view the insights.",
+            "type": "normal",
+            "isRead": False
+        }
+    )
+    # 👆 -------------------------------------------- 👆
+    
     return updated

@@ -39,6 +39,7 @@ import { TarotReaderSection } from '@/components/sections/tarot-reader-section';
 import { DashboardSection } from '@/components/sections/dashboard-section';
 import { TarotSection } from '@/components/sections/tarot-section'; 
 import { Card } from '@/components/ui/card';
+import { NotificationBell } from '@/components/sections/notification-bell';
 
 // ADDED 'auth' TO THE END OF SECTION ID
 export type SectionId = 'home' | 'palm' | 'tarot' | 'insights' | 'history' | 'profile' | 'consultations' | 'onboarding' | 'auth';
@@ -214,6 +215,9 @@ export default function Home() {
           <div className="flex items-center gap-2">
             {user ? (
               <div className="flex items-center gap-2">
+                {/* 👇 NEW: THE NOTIFICATION BELL 👇 */}
+                <NotificationBell />
+                
                 {user?.name && (
                   <button 
                     onClick={() => navigate('profile')}

@@ -647,6 +647,22 @@ export function PalmConsultationSection() {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
+  // --- PASTE THIS NEW BLOCK HERE ---
+  const [stats, setStats] = useState({ pending: 0, completedAllTime: 0 });
+
+  const fetchStats = useCallback(async () => {
+    if (!user) return;
+    try {
+      const res = await authedFetch('/api/consultations/stats');
+      if (res.ok) {
+        const data = await res.json();
+        setStats(data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }, [authedFetch, user]);
+
   const fetchTickets = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -680,7 +696,7 @@ export function PalmConsultationSection() {
             sunLine: getConf('sun_line'),
           },
           geminiSynthesis: t.reading?.personalitySynthesis || t.reading?.summary || 'No AI synthesis available for this older record.',
-          specialistNotes: t.specialistNotes ? JSON.parse(t.specialistNotes).notes : '',
+          specialistNotes: t.specialistNotes || '',
         };
       });
 
@@ -702,7 +718,8 @@ export function PalmConsultationSection() {
 
   useEffect(() => {
     fetchTickets();
-  }, [fetchTickets]);
+    fetchStats(); // <--- Add this line!
+  }, [fetchTickets, fetchStats]); // <--- Add fetchStats to the dependency array
 
   const handleSelectTicket = (ticket: PalmConsultationTicket) => {
     setSelectedTicketId(ticket.id);
@@ -782,18 +799,31 @@ export function PalmConsultationSection() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={fetchTickets}
-                disabled={loading}
-                className="border-border/60 text-xs"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
-                Sync Queue
-              </Button>
+            <div className="flex items-center gap-6">
+            {/* THE NEW METRIC CARDS */}
+            <div className="hidden md:flex items-center gap-4 mr-4">
+              <div className="text-center px-4 border-r border-border/50">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Pending</p>
+                <p className="font-display text-xl font-bold text-amber-400">{stats.pending}</p>
+              </div>
+              <div className="text-center px-4">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Completed</p>
+                <p className="font-display text-xl font-bold text-emerald-400">{stats.completedAllTime}</p>
+              </div>
             </div>
+
+            {/* SYNC BUTTON */}
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => { fetchTickets(); fetchStats(); }} 
+              disabled={loading} 
+              className="border-border/60 text-xs"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 mr-1.5 ${loading ? 'animate-spin' : ''}`} />
+              Sync Queue
+            </Button>
+          </div>
           </div>
 
           <div className="grid lg:grid-cols-12 gap-6">
