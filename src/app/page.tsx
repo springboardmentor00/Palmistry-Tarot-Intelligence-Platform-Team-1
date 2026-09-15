@@ -1,0 +1,402 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  Sparkles,
+  Hand,
+  Layers,
+  Brain,
+  History,
+  Menu,
+  X,
+  LogOut,
+  LogIn,
+  Loader2,
+  MessageSquare,
+  Wrench,
+  LayoutDashboard
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Starfield } from '@/components/starfield';
+import { HomeSection } from '@/components/sections/home-section';
+import { PalmSection } from '@/components/sections/palm-section';
+import { InsightsSection } from '@/components/sections/insights-section';
+import { HistorySection } from '@/components/sections/history-section';
+import { AuthScreen } from '@/components/auth/auth-screen';
+import { useAuth, useAuthedFetch } from '@/components/auth/auth-provider';
+import { ProfileSection } from '@/components/sections/profile-section';
+import { OnboardingSection } from '@/components/sections/onboarding-section';
+
+// Specialist & Role Sections
+import { PalmConsultationSection } from '@/components/sections/palm-consultation-section';
+import { SpiritualGuideSection } from '@/components/sections/spiritual-guide-section';
+import { UserConsultationsSection } from '@/components/sections/user-consultations-section';
+import { TarotReaderSection } from '@/components/sections/tarot-reader-section';
+
+// New Integrations
+import { DashboardSection } from '@/components/sections/dashboard-section';
+import { TarotSection } from '@/components/sections/tarot-section'; 
+import { Card } from '@/components/ui/card';
+import { NotificationBell } from '@/components/sections/notification-bell';
+
+// ADDED 'auth' TO THE END OF SECTION ID
+export type SectionId = 'home' | 'palm' | 'tarot' | 'insights' | 'history' | 'profile' | 'consultations' | 'onboarding' | 'auth';
+
+interface NavItem {
+  id: SectionId;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  requiresAuth?: boolean;
+}
+
+const NAV_ITEMS: NavItem[] = [
+  { id: 'home', label: 'Home', icon: Sparkles }, 
+  { id: 'palm', label: 'Palm Reading', icon: Hand, requiresAuth: true },
+  { id: 'tarot', label: 'Tarot Reading', icon: Layers, requiresAuth: true },
+  { id: 'insights', label: 'AI Insights', icon: Brain, requiresAuth: true },
+  { id: 'consultations', label: 'Consultations', icon: MessageSquare, requiresAuth: true },
+  { id: 'history', label: 'History', icon: History, requiresAuth: true },
+];
+
+export default function Home() {
+  const [section, setSection] = useState<SectionId>('home');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [savedReadings, setSavedReadings] = useState<
+    { type: 'palm' | 'tarot'; summary: string; content: string }[]
+  >([]);
+
+  const { user, loading, logout, refresh } = useAuth();
+  const authedFetch = useAuthedFetch();
+
+  // --- NEW: Drop them on the dashboard after a generic login ---
+  useEffect(() => {
+    if (user && section === 'auth') {
+      setSection('home');
+    }
+  }, [user, section]);
+
+  // --- THE SILENT ONBOARDING GUARD ---
+  const effectiveSection = (user && user.isInitiated === false) ? 'onboarding' : section;
+
+  const navigate = (id: SectionId) => {
+    setSection(id);
+    setMobileMenuOpen(false);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const addReading = (r: {
+    type: 'palm' | 'tarot';
+    summary: string;
+    content: string;
+  }) => {
+    setSavedReadings((prev) => [...prev, r]);
+  };
+
+  const handleNav = (id: SectionId) => {
+    if (NAV_ITEMS.find((n) => n.id === id)?.requiresAuth && !user) {
+      setSection(id);
+      setMobileMenuOpen(false);
+      return;
+    }
+    navigate(id);
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    setSection('home');
+    setSavedReadings([]);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <Starfield count={50} />
+        <div className="relative z-10 text-center">
+          <div className="relative w-14 h-14 rounded-full bg-gradient-to-br from-primary/80 via-accent/70 to-primary/60 flex items-center justify-center glow-pulse mx-auto mb-4">
+            <Loader2 className="w-6 h-6 text-primary-foreground animate-spin" />
+          </div>
+          <p className="text-sm text-muted-foreground tracking-wider">
+            Loading Mystica…
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // USE EFFECTIVESECTION INSTEAD OF RAW SECTION
+  const currentNavItem = NAV_ITEMS.find((n) => n.id === effectiveSection);
+  const requiresAuth = currentNavItem?.requiresAuth ?? false;
+  
+  // --- UPDATED: Show Auth Screen if locked route OR if section is exactly 'auth' ---
+  const showAuthScreen = !user && (requiresAuth || effectiveSection === 'auth');
+
+  // Handles which Consultation Inbox/Workspace to show
+  const renderConsultationView = () => {
+    const role = user?.role?.toLowerCase() || 'user';
+    
+    if (role.includes('palm')) {
+      return <PalmConsultationSection />;
+    } else if (role.includes('tarot')) {
+      return <TarotReaderSection />;
+    } else if (role.includes('spiritual')) {
+      return <SpiritualGuideSection />;
+    } else {
+      return <UserConsultationsSection />;
+    }
+  };
+
+  return (
+    <div className="relative min-h-screen flex flex-col">
+      <Starfield count={70} />
+
+      <header className="sticky top-0 z-40 backdrop-blur-xl bg-background/70 border-b border-border/50">
+        <div className="container mx-auto px-4 py-3 flex items-center justify-between gap-4">
+          <button
+            onClick={() => navigate('home')}
+            className="flex items-center gap-3 group"
+            aria-label="Mystica home"
+          >
+            <div className="relative w-10 h-10 rounded-full bg-gradient-to-br from-primary/80 via-accent/70 to-primary/60 flex items-center justify-center glow-pulse">
+              <Sparkles className="w-5 h-5 text-primary-foreground" />
+            </div>
+            <div className="text-left">
+              <div className="font-display text-lg font-bold tracking-wider text-foreground">
+                MYSTICA
+              </div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground -mt-0.5">
+                Palmistry · Tarot · AI
+              </div>
+            </div>
+          </button>
+
+          <nav className="hidden lg:flex items-center gap-1">
+            {NAV_ITEMS.map((item) => {
+              const isHomeTab = item.id === 'home';
+              const displayLabel = isHomeTab && user ? 'Dashboard' : item.label;
+              const DisplayIcon = isHomeTab && user ? LayoutDashboard : item.icon;
+
+              const active = section === item.id;
+              const locked = item.requiresAuth && !user;
+              
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => handleNav(item.id)}
+                  className={cn(
+                    'relative px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center gap-2',
+                    active
+                      ? 'text-primary-foreground'
+                      : locked
+                        ? 'text-muted-foreground/60 hover:text-muted-foreground'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'
+                  )}
+                >
+                  {active && (
+                    <motion.div
+                      layoutId="nav-active"
+                      className="absolute inset-0 rounded-md bg-gradient-to-r from-primary/90 to-accent/80"
+                      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                    />
+                  )}
+                  <DisplayIcon className="w-4 h-4 relative z-10" />
+                  <span className="relative z-10">{displayLabel}</span>
+                  {locked && (
+                    <LockIcon className="w-3 h-3 relative z-10 opacity-60" />
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="flex items-center gap-2">
+            {user ? (
+              <div className="flex items-center gap-2">
+                {/* 👇 NEW: THE NOTIFICATION BELL 👇 */}
+                <NotificationBell />
+                
+                {user?.name && (
+                  <button 
+                    onClick={() => navigate('profile')}
+                    className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary/60 border border-border/50 hover:bg-secondary/80 transition-colors cursor-pointer"
+                  >
+                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-xs font-bold text-primary-foreground">
+                      {user.name.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="text-sm font-medium">{user.name}</span>
+                  </button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleLogout}
+                  aria-label="Sign out"
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <LogOut className="w-4 h-4" />
+                </Button>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSection('auth')} // <--- CHANGED FROM 'palm'
+                className="border-primary/40 hover:bg-primary/10 hidden lg:flex"
+              >
+                <LogIn className="w-3.5 h-3.5 mr-1.5" />
+                Sign In
+              </Button>
+            )}
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className="lg:hidden"
+              onClick={() => setMobileMenuOpen((v) => !v)}
+              aria-label="Toggle menu"
+            >
+              {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            </Button>
+          </div>
+        </div>
+
+        <AnimatePresence>
+          {mobileMenuOpen && (
+            <motion.nav
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="lg:hidden overflow-hidden border-t border-border/50 bg-background/95"
+            >
+              <div className="container mx-auto px-4 py-2 flex flex-col gap-1">
+                {user?.name && (
+                  <button
+                    onClick={() => navigate('profile')}
+                    className="w-full text-left px-4 py-3 rounded-md flex items-center gap-3 bg-secondary/30 mb-2 border border-border/50"
+                  >
+                    <div className="w-6 h-6 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-xs font-bold text-primary-foreground">
+                      {user.name.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="text-sm font-medium text-foreground">{user.name}</span>
+                  </button>
+                )}
+                {NAV_ITEMS.map((item) => {
+                  const isHomeTab = item.id === 'home';
+                  const displayLabel = isHomeTab && user ? 'Dashboard' : item.label;
+                  const DisplayIcon = isHomeTab && user ? LayoutDashboard : item.icon;
+
+                  const active = section === item.id;
+                  const locked = item.requiresAuth && !user;
+                  
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => handleNav(item.id)}
+                      className={cn(
+                        'px-4 py-2.5 rounded-md text-sm font-medium transition-all flex items-center gap-3',
+                        active
+                          ? 'bg-secondary text-primary'
+                          : 'text-muted-foreground hover:bg-secondary/40'
+                      )}
+                    >
+                      <DisplayIcon className="w-4 h-4" />
+                      {displayLabel}
+                      {locked && <LockIcon className="w-3 h-3 opacity-60 ml-auto" />}
+                    </button>
+                  );
+                })}
+                {!user && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSection('auth'); // <--- CHANGED FROM 'palm'
+                      setMobileMenuOpen(false);
+                    }}
+                    className="mt-2 border-primary/40"
+                  >
+                    <LogIn className="w-3.5 h-3.5 mr-1.5" />
+                    Sign In / Register
+                  </Button>
+                )}
+              </div>
+            </motion.nav>
+          )}
+        </AnimatePresence>
+      </header>
+
+      <main className="relative z-10 flex-1 container mx-auto px-4 py-8 md:py-12">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={showAuthScreen ? 'auth' : effectiveSection}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+          >
+            {showAuthScreen ? (
+              <AuthScreen />
+            ) : effectiveSection === 'onboarding' ? ( 
+              <OnboardingSection onComplete={async () => {
+                await refresh();
+                setSection('home');
+              }} />
+            ) : effectiveSection === 'home' ? (
+              user ? <DashboardSection /> : <HomeSection onNavigate={handleNav} savedCount={savedReadings.length} />
+            ) : effectiveSection === 'palm' ? (
+              <PalmSection onReadingComplete={addReading} />
+            ) : effectiveSection === 'tarot' ? (
+              <TarotSection onReadingComplete={addReading} />
+            ) : effectiveSection === 'insights' ? (
+              <InsightsSection readings={savedReadings} />
+            ) : effectiveSection === 'history' ? (
+              <HistorySection />
+            ) : effectiveSection === 'profile' ? (
+              <ProfileSection />
+            ) : effectiveSection === 'consultations' ? (
+              renderConsultationView()
+            ) : null}
+          </motion.div>
+        </AnimatePresence>
+      </main>
+
+      <footer className="relative z-10 mt-auto border-t border-border/50 bg-background/60 backdrop-blur-sm">
+        <div className="container mx-auto px-4 py-6 flex flex-col md:flex-row items-center justify-between gap-3 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-primary" />
+            <span className="font-display tracking-wide">MYSTICA</span>
+            <span className="opacity-60">·</span>
+            <span>AI-Powered Palmistry & Tarot Intelligence Platform</span>
+          </div>
+          <div className="flex items-center gap-4 text-xs">
+            <span>Vision LLM · GLM-5V</span>
+            <span className="opacity-60">·</span>
+            <span>Text LLM · GLM-4.5</span>
+            <span className="opacity-60">·</span>
+            <span>JWT Authenticated</span>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+function LockIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+    </svg>
+  );
+}

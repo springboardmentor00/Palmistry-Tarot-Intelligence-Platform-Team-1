@@ -1,0 +1,6 @@
+0 = Background
+1 = Life Line
+2 = Head Line
+3 = Heart Line
+4 = Fate Line
+5 = Sun Line

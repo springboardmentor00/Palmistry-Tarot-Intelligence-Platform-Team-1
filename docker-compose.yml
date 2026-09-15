@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # 1. Relational Database (Auth & Users)
+  postgres:
+    image: postgres:15-alpine
+    container_name: mystica-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: mystica_secret_password
+      POSTGRES_DB: mystica_auth
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - mystica-net
+
+  # 2. Main Python FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mystica-backend
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql://admin:mystica_secret_password@postgres:5432/mystica_auth
+      - PALM_SERVICE_URL=http://palmistry-ai:8001
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - palmistry-ai
+    networks:
+      - mystica-net
+
+  # 3. Palmistry VLM Microservice
+  palmistry-ai:
+    build:
+      context: ./mini-services/palmistry-ai
+      dockerfile: Dockerfile
+    container_name: mystica-palmistry-ai
+    restart: always
+    ports:
+      - "8001:8001"
+    networks:
+      - mystica-net
+
+  # 4. Next.js Frontend
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mystica-frontend
+    restart: always
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - BACKEND_URL=http://backend:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - mystica-net
+
+volumes:
+  postgres_data:
+
+networks:
+  mystica-net:
+    driver: bridge

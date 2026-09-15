@@ -1,0 +1,12 @@
+# Python virtual environment
+venv_ai/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Runtime uploads
+uploads/
+
+# Generated prediction results
+results/
