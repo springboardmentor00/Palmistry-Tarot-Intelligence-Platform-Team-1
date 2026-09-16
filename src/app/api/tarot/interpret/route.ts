@@ -75,7 +75,7 @@ Guidelines:
     
     if (authHeader) {
       try {
-        await fetch('http://localhost:8000/api/readings/', {
+        await fetch('http://backend:8000/api/readings/', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

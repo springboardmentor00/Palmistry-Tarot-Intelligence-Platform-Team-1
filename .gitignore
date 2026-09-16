@@ -64,3 +64,5 @@ mini-services/palmistry-ai/__pycache__/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+
+.next/

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // Base URL of your Python PyTorch backend
-const PALMISTRY_API_URL = process.env.PALMISTRY_API_URL || 'http://localhost:8001';
+const PALMISTRY_API_URL = process.env.PALMISTRY_API_URL || 'http://palmistry-ai:8001';
 
 // Initialize Gemini
 const apiKey = process.env.GEMINI_API_KEY || '';
@@ -125,7 +125,7 @@ Keep it under 150 words. Do not list the confidence percentages, just interpret 
     
     if (authHeader) {
       try {
-        await fetch('http://localhost:8000/api/readings/', {
+        await fetch('http://backend:8000/api/readings/', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

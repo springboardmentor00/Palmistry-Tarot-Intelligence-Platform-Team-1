@@ -13,7 +13,7 @@ export async function GET(request: Request) {
       }
     }
 
-    const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
+    const backendUrl = process.env.BACKEND_URL || 'http://backend:8000';
     
     const response = await fetch(`${backendUrl}/api/admin/ai-analytics`, {
       method: 'GET',

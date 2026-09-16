@@ -24,11 +24,14 @@ services:
       dockerfile: Dockerfile
     container_name: mystica-backend
     restart: always
+    # 👉 This intercepts ONLY the CMD at the end of your Dockerfile
+    command: sh -c "python -m prisma db push && uvicorn main:app --host 0.0.0.0 --port 8000"
     environment:
       - DATABASE_URL=postgresql://admin:mystica_secret_password@postgres:5432/mystica_auth
       - PALM_SERVICE_URL=http://palmistry-ai:8001
     ports:
       - "8000:8000"
+      - "5555:5555"
     depends_on:
       - postgres
       - palmistry-ai
@@ -57,10 +60,13 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
       - BACKEND_URL=http://backend:8000
+      - PALMISTRY_API_URL=http://palmistry-ai:8001
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     ports:
       - "3000:3000"
     depends_on:
       - backend
+      - palmistry-ai
     networks:
       - mystica-net
 
